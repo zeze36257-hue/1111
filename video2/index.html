@@ -118,8 +118,8 @@ function callout(x, y, dx, dy, a, big, small, col = CREAM, o = {}) {
 // 右上角的时间 / 年份标签（参考视频里的 2018、2020…）
 function stamp(s, a, sub) {
   if (a <= 0) return;
-  text(s, W - 96, 340, { font: LAT, weight: 600, size: 54, color: CREAM, align: 'right', alpha: a * .9, ls: 4 });
-  if (sub) text(sub, W - 96, 392, { font: LAT, style: 'italic', weight: 500, size: 30, color: DIM, align: 'right', alpha: a });
+  text(s, W - 96, 412, { font: LAT, weight: 600, size: 54, color: CREAM, align: 'right', alpha: a * .9, ls: 4 });
+  if (sub) text(sub, W - 96, 460, { font: LAT, style: 'italic', weight: 500, size: 30, color: DIM, align: 'right', alpha: a });
 }
 const BOKEH = (() => { const r = mulberry(4); return Array.from({ length: 26 }, () => ({ x: r() * W, y: 300 + r() * 1300, r: 20 + r() * 50, p: r() * TAU, v: .2 + r() * .5 })); })();
 function bokeh(t, a) {
@@ -310,7 +310,7 @@ shot({
     stamp('2000', sstep(.2, 1, lt), 'Cornell University');
     callout(sx, sy - 40, -110, -110, gA, '≈ 50%', '', ORANGE, { grow: (t - L_G - .5) / .6, bigSize: 72 });
     callout(sx, sy - 40, -110, -110, rA, '< 1/4', '', TEAL, { grow: (t - L_REAL - .3) / .6, bigSize: 72 });
-    text('Gilovich, Medvec & Savitsky (2000)', W - 96, 436, { font: LAT, style: 'italic', size: 28, color: DIM, align: 'right', alpha: sstep(L_REAL + 1, L_REAL + 2, t) });
+    text('Gilovich, Medvec & Savitsky (2000)', W - 96, 496, { font: LAT, style: 'italic', size: 28, color: DIM, align: 'right', alpha: sstep(L_REAL + 1, L_REAL + 2, t) });
   },
 });
 
@@ -465,7 +465,8 @@ function subtitles(T) {
 // ======================================================================== 顶部分段进度条
 const SECTIONS = [['钩子', 0, DROP], ['共鸣', DROP, 36], ['实验', 36, 56], ['起名字', 56, 70], ['社会现象', 70, CALM], ['结尾', CALM, 110.5]];
 const TOTAL = 110.5;
-const PB = { y: 236, h: 4, x0: 96, x1: 984, gap: 10 };
+// 进度条放在 TikTok 顶部“关注 / 推荐”栏之下，避免被 App 的界面挡住
+const PB = { y: 336, h: 4, x0: 96, x1: 984, gap: 10 };
 function progress(T) {
   const span = PB.x1 - PB.x0 - PB.gap * (SECTIONS.length - 1);
   let x = PB.x0, cur = 0;
@@ -479,6 +480,15 @@ function progress(T) {
   text(`${String(cur + 1).padStart(2, '0')} / ${String(SECTIONS.length).padStart(2, '0')}`, PB.x1, PB.y - 32, { font: LAT, weight: 600, size: 30, color: DIM, align: 'right', ls: 2 });
 }
 
+// ======================================================================== 水印
+// 低透明度、缓慢漂移；画在场景层里，所以会跟着每个镜头一起淡入淡出。活动范围避开进度条和字幕。
+const WM = '@全世界最后一个深情的男人';
+function watermark(T) {
+  const x = 540 + Math.sin(T * TAU / 47) * 210 + Math.sin(T * TAU / 83 + 1) * 50;
+  const y = 860 + Math.sin(T * TAU / 61 + .7) * 300;
+  text(WM, x, y, { font: SANS, weight: 500, size: 30, align: 'center', color: '#ffffff', alpha: .16 * sstep(0, 1.5, T), ls: 2 });
+}
+
 // ======================================================================== 帧
 const shotAt = T => { let s = SHOTS[0]; for (const S of SHOTS) if (T >= S.t0) s = S; return s; };
 function frame(T) {
@@ -489,6 +499,7 @@ function frame(T) {
   ctx.save();
   const z = 1 + .025 * lt / d; ctx.translate(W / 2, H * .5); ctx.scale(z, z); ctx.translate(-W / 2, -H * .5);   // 缓慢推近
   S.draw(lt, d, T);
+  watermark(T);
   ctx.restore();
   const dip = 1 - win(lt, 0, d, S.fi ?? .45, S.fo ?? .45);
   if (dip > 0) { ctx.fillStyle = `rgba(0,0,0,${dip})`; ctx.fillRect(0, 0, W, H); }
