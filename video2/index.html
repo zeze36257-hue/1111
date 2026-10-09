@@ -1,0 +1,523 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>其实，没人在看你</title>
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>
+  :root { --bg: #000; }
+  html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; }
+  #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  canvas { height: 100vh; width: 56.25vh; max-width: 100vw; max-height: 177.78vw; background: #000; display: block; }
+  #hint { position: fixed; left: 0; right: 0; bottom: 16px; text-align: center; color: #888; font: 14px "Noto Sans SC", sans-serif; }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c" width="1080" height="1920"></canvas></div>
+<div id="hint">点击播放 / 暂停 · ← → 快退快进</div>
+<script>
+'use strict';
+// 《其实，没人在看你》第二版：俯视镜头、留白、数字叙事，节奏卡在背景音乐的段落上。
+// 每一帧都是时间 T 的纯函数：实时预览与逐帧导出（?export=1）画出的是同一帧。
+const W = 1080, H = 1920;
+const EXPORT = /[?&]export=1/.test(location.search);
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const PI = Math.PI, TAU = PI * 2;
+const clamp = (x, a = 0, b = 1) => x < a ? a : x > b ? b : x;
+const lerp = (a, b, t) => a + (b - a) * t;
+const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+const eout = t => 1 - Math.pow(1 - clamp(t), 3);
+const eio = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const win = (t, a, b, fi = .4, fo = .4) => sstep(a, a + fi, t) * (1 - sstep(b - fo, b, t));
+function mulberry(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+
+const SERIF = '"Noto Serif SC", serif', SANS = '"Noto Sans SC", sans-serif', LAT = '"Cormorant Garamond", serif';
+const ORANGE = '#f2a14a', TEAL = '#4fd6c4', CREAM = '#ece6da', DIM = '#8a93a3';
+const O_RGB = '242,161,74', T_RGB = '79,214,196';
+
+// 背景音乐的段落（秒）：前奏 0–10.5，安静 10.5–17.25，全编制 17.25 起，89.5 回落
+const DROP = 17.25, CALM = 89.5;
+
+// ======================================================================== 基础绘制
+function text(s, x, y, o = {}) {
+  ctx.save();
+  ctx.font = `${o.style || ''} ${o.weight || 500} ${o.size || 44}px ${o.font || SERIF}`;
+  ctx.textAlign = o.align || 'left'; ctx.textBaseline = o.base || 'middle';
+  ctx.globalAlpha *= o.alpha ?? 1; ctx.letterSpacing = (o.ls || 0) + 'px';
+  if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = o.blur ?? 20; }
+  ctx.fillStyle = o.color || CREAM; ctx.fillText(s, x, y);
+  ctx.restore();
+}
+function rr(x, y, w, h, r, fill, stroke, lw = 2) {
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+}
+function floor(c0 = '#161d29', c1 = '#07090d', cx = W / 2, cy = H * .45) {
+  const g = ctx.createRadialGradient(cx, cy, 60, cx, cy, H * .85);
+  g.addColorStop(0, c0); g.addColorStop(1, c1); ctx.fillStyle = g; ctx.fillRect(-W, -H, W * 3, H * 3);
+}
+function tiles(x0, y0, w, h, step, col = 'rgba(150,170,210,.05)') {
+  ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = 1.5;
+  for (let x = x0; x <= x0 + w + .1; x += step) { ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x, y0 + h); ctx.stroke(); }
+  for (let y = y0; y <= y0 + h + .1; y += step) { ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x0 + w, y); ctx.stroke(); }
+  ctx.restore();
+}
+// 从正上方看到的一圈光
+function pool(x, y, r, a, col = '255,222,170', edge = true) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+  g.addColorStop(0, `rgba(${col},${.34 * a})`); g.addColorStop(.7, `rgba(${col},${.16 * a})`); g.addColorStop(1, `rgba(${col},0)`);
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+  if (edge) { ctx.strokeStyle = `rgba(${col},${.12 * a})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, r * .78, 0, TAU); ctx.stroke(); }
+  ctx.restore();
+}
+// 俯视的人：肩膀 + 头顶。dir 是面朝方向（弧度，-PI/2 为朝上）
+function human(x, y, s, o = {}) {
+  const a = o.alpha ?? 1; if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a; ctx.translate(x, y); ctx.rotate((o.dir ?? -PI / 2) + PI / 2);
+  if (o.phone) {                                     // 手机的光照亮脸前
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    const g = ctx.createRadialGradient(0, -s * .9, 0, 0, -s * .9, s * 1.6);
+    g.addColorStop(0, `rgba(150,200,255,${.35 * o.phone})`); g.addColorStop(1, 'rgba(150,200,255,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, -s * .9, s * 1.6, 0, TAU); ctx.fill(); ctx.restore();
+  }
+  const body = o.body || '#2a303c';
+  ctx.fillStyle = body; ctx.beginPath(); ctx.ellipse(0, s * .32, s * 1.12, s * .6, 0, 0, TAU); ctx.fill();
+  const sh = ctx.createLinearGradient(-s, 0, s, 0); sh.addColorStop(0, 'rgba(255,255,255,.08)'); sh.addColorStop(1, 'rgba(0,0,0,.25)');
+  ctx.fillStyle = sh; ctx.beginPath(); ctx.ellipse(0, s * .32, s * 1.12, s * .6, 0, 0, TAU); ctx.fill();
+  if (o.phone) rr(-s * .22, -s * 1.25, s * .44, s * .62, s * .08, `rgba(200,230,255,${.9 * o.phone})`);
+  ctx.fillStyle = o.hair || '#0c0e13'; ctx.beginPath(); ctx.arc(0, 0, s * .52, 0, TAU); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,.12)'; ctx.lineWidth = s * .08; ctx.beginPath(); ctx.arc(0, 0, s * .44, PI * 1.1, PI * 1.6); ctx.stroke();
+  ctx.restore();
+  if (o.ring) {                                      // 主角 / 被标记的人：头顶一圈彩色光环
+    ctx.save(); ctx.globalAlpha *= a * (o.ringA ?? 1);
+    ctx.shadowColor = o.ring; ctx.shadowBlur = 16; ctx.strokeStyle = o.ring; ctx.lineWidth = Math.max(2.5, s * .1);
+    ctx.beginPath(); ctx.arc(x, y, s * .78, 0, TAU); ctx.stroke(); ctx.restore();
+  }
+}
+// 注释标签：从目标点引一条细线到文字，可带大号数字
+function callout(x, y, dx, dy, a, big, small, col = CREAM, o = {}) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a;
+  const k = eout(o.grow ?? 1);
+  ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.globalAlpha *= .8;
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + dx * k, y + dy * k); ctx.lineTo(x + dx * k + Math.sign(dx || 1) * 40 * k, y + dy * k); ctx.stroke();
+  ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y, 5, 0, TAU); ctx.fill();
+  ctx.restore();
+  const tx = x + dx + Math.sign(dx || 1) * 56, al = dx >= 0 ? 'left' : 'right';
+  ctx.save(); ctx.globalAlpha *= a * sstep(.5, 1, o.grow ?? 1);
+  ctx.font = `700 ${o.bigSize || 64}px ${SERIF}`; ctx.letterSpacing = '0px';
+  const bw = big ? ctx.measureText(big).width : 0;
+  if (big) text(big, tx, y + dy, { size: o.bigSize || 64, weight: 700, color: col, align: al });
+  if (small) text(small, dx >= 0 ? tx + bw + (big ? 14 : 0) : tx - bw - (big ? 14 : 0), y + dy + (big ? 6 : 0), { size: 34, weight: 500, color: o.smallCol || CREAM, align: al });
+  ctx.restore();
+}
+// 右上角的时间 / 年份标签（参考视频里的 2018、2020…）
+function stamp(s, a, sub) {
+  if (a <= 0) return;
+  text(s, W - 96, 340, { font: LAT, weight: 600, size: 54, color: CREAM, align: 'right', alpha: a * .9, ls: 4 });
+  if (sub) text(sub, W - 96, 392, { font: LAT, style: 'italic', weight: 500, size: 30, color: DIM, align: 'right', alpha: a });
+}
+const BOKEH = (() => { const r = mulberry(4); return Array.from({ length: 26 }, () => ({ x: r() * W, y: 300 + r() * 1300, r: 20 + r() * 50, p: r() * TAU, v: .2 + r() * .5 })); })();
+function bokeh(t, a) {
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  for (const b of BOKEH) {
+    const al = a * (.04 + .04 * Math.sin(t * b.v + b.p)), y = b.y - t * 8 * b.v;
+    const g = ctx.createRadialGradient(b.x, y, 0, b.x, y, b.r); g.addColorStop(0, `rgba(160,190,230,${al})`); g.addColorStop(1, 'rgba(160,190,230,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(b.x, y, b.r, 0, TAU); ctx.fill();
+  }
+  ctx.restore();
+}
+const GRAIN = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d'), im = g.createImageData(256, 256), r = mulberry(3);
+  for (let i = 0; i < im.data.length; i += 4) { const v = r() * 255; im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 255; }
+  g.putImageData(im, 0, 0); return c;
+})();
+function post(T) {
+  const v = ctx.createRadialGradient(W / 2, H * .46, H * .28, W / 2, H * .46, H * .8);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,.6)'); ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+  const f = Math.floor(T * 30), ox = (f * 97) % 256, oy = (f * 61) % 256;
+  ctx.save(); ctx.globalAlpha = .06; ctx.globalCompositeOperation = 'overlay';
+  ctx.fillStyle = ctx.createPattern(GRAIN, 'repeat'); ctx.translate(-ox, -oy); ctx.fillRect(0, 0, W + 256, H + 256); ctx.restore();
+}
+
+// ======================================================================== 共用场景元素
+// 手机输入框（开头与结尾）：typed 为已输入的字数，send 为发送进度
+const DRAFT = '今天的我，好像还不错。';
+function inputBox(lt, a, typed, o = {}) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a;
+  text('凌晨 1:47', W / 2, 800, { font: SANS, size: 30, color: DIM, align: 'center', ls: 2 });
+  const y = 850, x = 110, w = 860, h = 120;
+  rr(x, y, w, h, 60, 'rgba(28,34,46,.95)', 'rgba(255,255,255,.08)', 2);
+  const s = DRAFT.slice(0, Math.max(0, Math.floor(typed)));
+  ctx.font = `500 46px ${SANS}`; ctx.letterSpacing = '0px'; const tw = ctx.measureText(s).width;
+  text(s, x + 50, y + h / 2, { font: SANS, size: 46, color: CREAM });
+  if (Math.floor(lt * 2.2) % 2 === 0 && !(o.send > 0)) { ctx.fillStyle = CREAM; ctx.fillRect(x + 54 + tw, y + 34, 3, 52); }
+  const sendA = s.length ? 1 : .35;
+  ctx.save(); ctx.globalAlpha *= sendA; ctx.fillStyle = TEAL; ctx.beginPath(); ctx.arc(x + w - 62, y + h / 2, 38, 0, TAU); ctx.fill();
+  ctx.strokeStyle = '#0d1a1c'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x + w - 62, y + h / 2 + 16); ctx.lineTo(x + w - 62, y + h / 2 - 16); ctx.moveTo(x + w - 76, y + h / 2 - 2); ctx.lineTo(x + w - 62, y + h / 2 - 16); ctx.lineTo(x + w - 48, y + h / 2 - 2); ctx.stroke(); ctx.restore();
+  if (o.send > 0) { ctx.strokeStyle = `rgba(${T_RGB},${1 - o.send})`; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(x + w - 62, y + h / 2, 38 + o.send * 90, 0, TAU); ctx.stroke(); }
+  text(o.label ?? '草稿', x + 30, y + h + 50, { font: SANS, size: 28, color: DIM, alpha: o.labelA ?? 1 });
+  ctx.restore();
+}
+
+// ======================================================================== 镜头
+const SHOTS = [];
+function shot(o) { SHOTS.push(o); return o; }
+
+// ---------------------------------------------------------------- 0–10.5 凌晨 1:47，写好又删掉
+shot({
+  t0: 0, t1: 10.5, fi: .01,
+  draw(lt, d, T) {
+    floor('#121824', '#05070a'); bokeh(T, 1);
+    const typed = lt < 1.2 ? 0 : lt < 5.6 ? (lt - 1.2) / .38 : lt < 6 ? DRAFT.length : Math.max(0, DRAFT.length - (lt - 6) / .16);
+    inputBox(lt, 1, Math.min(DRAFT.length, typed), { label: lt > 8.2 ? '已删除 · 第 3 次' : '草稿', labelA: 1 });
+  },
+});
+// ---------------------------------------------------------------- 10.5–17.25 标题：一圈光
+shot({
+  t0: 10.5, t1: DROP,
+  draw(lt, d, T) {
+    floor('#121925', '#05070a'); tiles(-40, 200, W + 80, 1600, 120, 'rgba(150,170,210,.035)');
+    const la = sstep(.6, 2.2, lt);
+    pool(540, 1060, 300, la); human(540, 1060, 34, { ring: ORANGE, ringA: la, alpha: .4 + .6 * la, dir: -PI / 2 + Math.sin(lt * .6) * .3 });
+    text('聚光灯效应', W / 2, 600, { size: 124, weight: 900, align: 'center', ls: 18, alpha: sstep(1.2, 2.4, lt), glow: 'rgba(255,220,170,.25)', blur: 30 });
+    text('其实，没人在看你。', W / 2, 720, { size: 40, weight: 500, align: 'center', ls: 14, color: '#a7b0bf', alpha: sstep(2.4, 3.6, lt) });
+    ctx.save(); ctx.globalAlpha = sstep(2.6, 4, lt) * .5; ctx.strokeStyle = ORANGE; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(540, 790); ctx.lineTo(540, lerp(790, 1000, eio((lt - 2.8) / 1.6))); ctx.stroke(); ctx.restore();
+  },
+});
+
+// ---------------------------------------------------------------- 17.25–23.5 08:12 走进教室
+const DESKS = (() => { const out = []; for (let r = 0; r < 6; r++) for (let c = 0; c < 4; c++) out.push({ x: 210 + c * 220, y: 620 + r * 120 }); return out; })();
+const EMPTY = 17;
+const CLASS = DESKS.flatMap((d, i) => i === EMPTY ? [] : [{ x: d.x - 34, y: d.y + 42 }, { x: d.x + 34, y: d.y + 42 }]).filter((_, i) => i % 3 !== 2);
+function classroom(lt, o = {}) {
+  floor('#18202c', '#07090d'); tiles(60, 470, 960, 900, 60, 'rgba(150,170,210,.04)');
+  rr(240, 450, 600, 36, 6, '#22382f'); rr(240, 450, 600, 36, 6, null, 'rgba(255,255,255,.08)');
+  DESKS.forEach(d => { rr(d.x - 82, d.y - 18, 164, 40, 6, '#2c2a28'); rr(d.x - 82, d.y - 18, 164, 40, 6, null, 'rgba(255,255,255,.05)'); });
+  CLASS.forEach((p, i) => human(p.x, p.y, 25, { dir: -PI / 2 + Math.sin(i * 7.1) * .25 + Math.sin(lt * .5 + i) * .05 }));
+}
+shot({
+  t0: DROP, t1: 23.5, fi: .15,
+  draw(lt, d, T) {
+    classroom(lt);
+    const seat = DESKS[EMPTY], path = [[110, 1420], [110, 1290], [seat.x + 110 - 110, 1290], [seat.x, seat.y + 42]];
+    const k = eio(lt / 3.2), seg = k * 3, i = Math.min(2, Math.floor(seg)), f = seg - i;
+    const px = lerp(path[i][0], path[i + 1][0], f), py = lerp(path[i][1], path[i + 1][1], f);
+    const dir = Math.atan2(path[i + 1][1] - path[i][1], path[i + 1][0] - path[i][0]);
+    const ga = sstep(1, 2.2, lt);
+    ctx.save(); ctx.setLineDash([6, 10]); ctx.lineWidth = 1.6;
+    CLASS.forEach((p, j) => { const a = ga * sstep(0, .4, lt - 1 - j * .03); ctx.strokeStyle = `rgba(${O_RGB},${.35 * a})`; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(px, py); ctx.stroke(); });
+    ctx.restore();
+    pool(px, py, 150, .8);
+    human(px, py, 27, { ring: ORANGE, dir });
+    stamp('08:12', sstep(.2, .9, lt));
+    const n = Math.round(CLASS.length * sstep(1.2, 3.5, lt));
+    callout(px, py - 30, 120, -150, sstep(2, 2.6, lt), String(n), '道目光', ORANGE, { grow: (lt - 2) / .6 });
+  },
+});
+// ---------------------------------------------------------------- 23.5–29.7 21:30 修图 40 分钟
+shot({
+  t0: 23.5, t1: 29.7,
+  draw(lt, d, T) {
+    floor('#1e1914', '#080605');
+    ctx.save(); const wood = ctx.createLinearGradient(0, 400, 0, 1500); wood.addColorStop(0, '#2b2018'); wood.addColorStop(1, '#1a130e'); ctx.fillStyle = wood; ctx.fillRect(60, 420, 960, 1060);
+    ctx.strokeStyle = 'rgba(0,0,0,.25)'; ctx.lineWidth = 2; for (let y = 450; y < 1480; y += 46) { ctx.beginPath(); ctx.moveTo(60, y + Math.sin(y) * 4); ctx.lineTo(1020, y + Math.cos(y) * 4); ctx.stroke(); } ctx.restore();
+    pool(760, 640, 420, 1, '255,205,140', false);
+    ctx.save(); ctx.translate(520, 930); ctx.rotate(-.06);              // 手机平放在桌上
+    ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = 40; rr(-200, -360, 400, 720, 48, '#111318'); ctx.shadowBlur = 0;
+    ctx.beginPath(); ctx.roundRect(-182, -342, 364, 684, 36); ctx.clip();
+    const g = ctx.createLinearGradient(0, -342, 0, 342); g.addColorStop(0, '#f5c9a8'); g.addColorStop(1, '#d98a7a'); ctx.fillStyle = g; ctx.fillRect(-182, -342, 364, 684);
+    ctx.fillStyle = '#fbe7d8'; ctx.beginPath(); ctx.ellipse(0, -40, 92, 112, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#2a2024'; ctx.beginPath(); ctx.ellipse(0, -110, 104, 70, 0, PI, TAU); ctx.fill();
+    ctx.fillStyle = '#2a2024'; for (const k of [-1, 1]) { ctx.beginPath(); ctx.ellipse(k * 34, -40, 9, 12, 0, 0, TAU); ctx.fill(); }
+    ctx.strokeStyle = '#c0706a'; ctx.lineWidth = 5; ctx.beginPath(); ctx.arc(0, 2, 30, .2 * PI, .8 * PI); ctx.stroke();
+    ctx.fillStyle = 'rgba(15,15,20,.82)'; ctx.fillRect(-182, 170, 364, 172);
+    ['美颜', '瘦脸', '滤镜'].forEach((nm, i) => {
+      const yy = 210 + i * 46, p = .5 + .42 * Math.sin(lt * (1.8 + i * .6) + i * 2);
+      text(nm, -150, yy, { font: SANS, size: 22, color: '#bbb' });
+      rr(-80, yy - 3, 230, 6, 3, 'rgba(255,255,255,.2)'); rr(-80, yy - 3, 230 * p, 6, 3, ORANGE);
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(-80 + 230 * p, yy, 10, 0, TAU); ctx.fill();
+    });
+    ctx.restore();
+    stamp('21:30', sstep(.2, .9, lt));
+    const m = eio(clamp((lt - .6) / 4.2)) * 40;
+    callout(720, 620, 60, -110, sstep(.8, 1.4, lt), `${String(Math.floor(m)).padStart(2, '0')}:${String(Math.floor((m * 60) % 60)).padStart(2, '0')}`, '', ORANGE, { grow: (lt - .8) / .6, bigSize: 60 });
+  },
+});
+// ---------------------------------------------------------------- 29.7–36 02:00 凌晨还在复盘
+shot({
+  t0: 29.7, t1: 36,
+  draw(lt, d, T) {
+    floor('#0f1624', '#04060a');
+    ctx.save(); ctx.translate(540, 980);
+    rr(-300, -440, 600, 880, 30, '#1b2236'); rr(-300, -440, 600, 880, 30, null, 'rgba(255,255,255,.05)');
+    rr(-220, -400, 440, 150, 50, '#2a3350');
+    const bl = ctx.createLinearGradient(0, -200, 0, 440); bl.addColorStop(0, '#36426a'); bl.addColorStop(1, '#2a3354');
+    ctx.fillStyle = bl; ctx.beginPath(); ctx.moveTo(-290, -170); ctx.bezierCurveTo(-120, -220, 120, -220, 290, -170); ctx.lineTo(290, 430); ctx.lineTo(-290, 430); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,.25)'; ctx.lineWidth = 3; for (const k of [-1, 1]) { ctx.beginPath(); ctx.moveTo(k * 60, -150); ctx.quadraticCurveTo(k * 120, 120, k * 90, 400); ctx.stroke(); }
+    ctx.restore();
+    human(540, 680, 46, { dir: PI / 2, phone: .9, body: 'rgba(0,0,0,0)' });
+    const R = 230;                                         // 同一句话绕着头一圈圈打转
+    ctx.save(); ctx.translate(540, 680); ctx.rotate(lt * .35);
+    const msg = '我刚才是不是说错话了 · ';
+    for (let ring = 0; ring < 2; ring++) {
+      const rad = R + ring * 70, rep = msg.repeat(ring ? 4 : 3), n = [...rep].length;
+      [...rep].forEach((ch, i) => {
+        const ang = i / n * TAU * (ring ? -1 : 1);
+        ctx.save(); ctx.rotate(ang); ctx.translate(0, -rad);
+        text(ch, 0, 0, { font: SANS, size: 28, align: 'center', color: '#c9d4f2', alpha: (ring ? .3 : .55) * sstep(.3 + ring * .6, 1.2 + ring * .6, lt) });
+        ctx.restore();
+      });
+    }
+    ctx.restore();
+    stamp('02:00', sstep(.2, .9, lt));
+  },
+});
+
+// ---------------------------------------------------------------- 36–56 实验：康奈尔，2000
+const HALL = (() => { const out = []; for (let r = 0; r < 8; r++) for (let c = 0; c < 5; c++) out.push({ x: 180 + c * 180 + (r % 2 ? 22 : -22), y: 740 + r * 80, i: r * 5 + c }); return out; })();
+const GUESS = new Set((() => { const r = mulberry(31), s = new Set(); while (s.size < 20) s.add(Math.floor(r() * 40)); return [...s]; })());
+const REAL = new Set([3, 11, 17, 22, 28, 34, 38, 7, 25]);
+const L_EXP = 36, L_G = 45.5, L_ACT = 50, L_REAL = 51.8;
+shot({
+  t0: 36, t1: 56,
+  draw(lt, d, T) {
+    const t = L_EXP + lt;
+    floor('#161d29', '#06080b'); tiles(60, 640, 960, 820, 48, 'rgba(150,170,210,.035)');
+    rr(300, 520, 480, 30, 6, '#22382f');
+    HALL.forEach(p => rr(p.x - 36, p.y + 14, 72, 22, 5, 'rgba(70,140,140,.35)'));
+    const walk = eio((t - 40.8) / 3), sx = lerp(1150, 540, walk), sy = 640;
+    const gA = sstep(L_G + .3, L_G + 1.2, t) * (1 - sstep(L_ACT, L_ACT + .6, t)), rA = sstep(L_REAL + .2, L_REAL + 1, t);
+    ctx.save(); ctx.lineWidth = 1.6;
+    HALL.forEach((p, j) => {
+      if (GUESS.has(p.i) && gA > 0) { ctx.setLineDash([6, 10]); ctx.strokeStyle = `rgba(${O_RGB},${.4 * gA})`; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(sx, sy); ctx.stroke(); }
+      if (REAL.has(p.i) && rA > 0) { ctx.setLineDash([]); ctx.strokeStyle = `rgba(${T_RGB},${.55 * rA})`; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(sx, sy); ctx.stroke(); }
+    });
+    ctx.restore();
+    HALL.forEach((p, j) => {
+      const g = GUESS.has(p.i) ? gA * sstep(0, .3, t - L_G - .3 - j * .02) : 0, r = REAL.has(p.i) ? rA : 0;
+      human(p.x, p.y, 24, { dir: -PI / 2 + Math.sin(j * 3.3) * .3, ring: r ? TEAL : g ? ORANGE : null, ringA: r || g, phone: (j * 7) % 5 === 0 ? .6 : 0 });
+    });
+    pool(sx, sy, 170, sstep(43, 44, t) * (1 - .5 * sstep(L_ACT, L_ACT + .5, t)) + .5 * rA);
+    human(sx, sy, 30, { body: '#f4cf3f', ring: ORANGE, dir: walk < 1 ? PI : -PI / 2 + PI, alpha: sstep(40.6, 41, t) });
+    stamp('2000', sstep(.2, 1, lt), 'Cornell University');
+    callout(sx, sy - 40, -110, -110, gA, '≈ 50%', '', ORANGE, { grow: (t - L_G - .5) / .6, bigSize: 72 });
+    callout(sx, sy - 40, -110, -110, rA, '< 1/4', '', TEAL, { grow: (t - L_REAL - .3) / .6, bigSize: 72 });
+    text('Gilovich, Medvec & Savitsky (2000)', W - 96, 436, { font: LAT, style: 'italic', size: 28, color: DIM, align: 'right', alpha: sstep(L_REAL + 1, L_REAL + 2, t) });
+  },
+});
+
+// ---------------------------------------------------------------- 56–70 舞台中央 → 观众席大多是空位
+const AUD = (() => { const out = [], r = mulberry(12); for (let row = 0; row < 6; row++) { const R = 360 + row * 92, n = 9 + row * 2; for (let k = 0; k < n; k++) { const a = PI * (.18 + .64 * k / (n - 1)); out.push({ x: 540 + Math.cos(a) * R * 1.05, y: 760 + Math.sin(a) * R * .95, a, taken: r() < .1 }); } } return out; })();
+shot({
+  t0: 56, t1: 70,
+  draw(lt, d, T) {
+    const t = 56 + lt, z = lerp(2.1, 1, eio((t - 63.4) / 2.4));
+    floor('#141a25', '#050608');
+    const sy = lerp(840, 570, eio((t - 63.4) / 2.4)); ctx.save(); ctx.translate(540, sy); ctx.scale(z, z); ctx.translate(-540, -650);
+    ctx.fillStyle = '#1f1b22'; ctx.beginPath(); ctx.ellipse(540, 700, 360, 150, 0, PI, TAU); ctx.lineTo(900, 740); ctx.lineTo(180, 740); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.07)'; ctx.lineWidth = 2; ctx.stroke();
+    AUD.forEach(s => {
+      ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(s.a - PI / 2); rr(-22, -16, 44, 32, 7, 'rgba(70,140,140,.28)', 'rgba(110,190,190,.25)', 1.5); ctx.restore();
+      if (s.taken) human(s.x, s.y, 20, { dir: s.a + PI, phone: .8 });
+    });
+    pool(540, 650, 200, 1);
+    human(540, 650, 30, { ring: ORANGE, dir: PI / 2 + Math.sin(t * .7) * .4 });
+    ctx.restore();
+    const za = 1 - sstep(63, 63.6, t);
+    callout(540, sy - 40 * z, 150, -170, za * sstep(56.8, 57.4, t), '', 'Spotlight Effect', CREAM, { grow: (t - 56.8) / .6, smallCol: CREAM });
+    stamp('假想观众', sstep(65, 66, t), 'Imaginary Audience · Elkind, 1967');
+  },
+});
+
+// ---------------------------------------------------------------- 70–89.5 斑马线：数字，以及每个人自己的光
+const WALK = (() => { const r = mulberry(9); return Array.from({ length: 46 }, (_, i) => ({ x: 100 + r() * 880, y0: r() * 1400, v: (r() < .5 ? 1 : -1) * (40 + r() * 40), s: 22 + r() * 5, p: r() * TAU })); })();
+shot({
+  t0: 70, t1: CALM,
+  draw(lt, d, T) {
+    const t = 70 + lt, z = lerp(1.35, 1, eio((t - 79.6) / 2.6));
+    floor('#151b25', '#050608');
+    ctx.save(); ctx.translate(540, 980); ctx.scale(z, z); ctx.translate(-540, -980);
+    ctx.fillStyle = '#1b2029'; ctx.fillRect(-200, 380, W + 400, 1240);
+    for (let y = 420; y < 1600; y += 92) rr(-200, y, W + 400, 46, 0, 'rgba(225,228,235,.13)');
+    const each = sstep(80, 82.5, t);
+    const ppl = WALK.map(p => ({ ...p, y: 380 + (((p.y0 + p.v * t) % 1240) + 1240) % 1240 }));
+    ppl.forEach(p => pool(p.x, p.y, 95, each * .8));
+    ppl.forEach(p => human(p.x + Math.sin(t * 2 + p.p) * 3, p.y, p.s, { dir: p.v > 0 ? PI / 2 : -PI / 2, phone: .5 + .5 * each }));
+    pool(540, 980, 170, 1 - each * .3);
+    human(540, 980, 30, { ring: ORANGE, dir: -PI / 2, phone: 1 });
+    ctx.restore();
+    const ca = 1 - sstep(79.4, 80.2, t);
+    [['♥ 128', '#ff6b81', 70.8, -230, -170], ['2,436 浏览', '#8fb8ff', 73.2, 200, -120], ['已读', TEAL, 75.6, -190, 120]].forEach(([s, col, t0, dx, dy]) => {
+      const a = sstep(t0, t0 + .5, t) * ca; if (a <= 0) return;
+      ctx.save(); ctx.globalAlpha = a; ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.globalAlpha *= .7;
+      ctx.beginPath(); ctx.moveTo(540, 980); ctx.lineTo(540 + dx * eout((t - t0) / .5), 980 + dy * eout((t - t0) / .5)); ctx.stroke(); ctx.restore();
+      ctx.save(); ctx.globalAlpha = a; ctx.font = `700 40px ${SANS}`; const w = ctx.measureText(s).width + 56;
+      rr(540 + dx - w / 2, 980 + dy - 34, w, 68, 34, 'rgba(20,24,32,.92)', col, 2);
+      text(s, 540 + dx, 980 + dy + 2, { font: SANS, weight: 700, size: 36, color: col, align: 'center' }); ctx.restore();
+    });
+  },
+});
+
+// ---------------------------------------------------------------- 89.5–97.5 金句
+const QUOTE = ['如果你知道', '别人多么少想起你，', '就不会那么在意', '别人怎么看你了。'];
+shot({
+  t0: CALM, t1: 97.5,
+  draw(lt, d, T) {
+    floor('#16120e', '#050403'); bokeh(T, .6);
+    text('“', 120, 640, { size: 220, weight: 900, color: ORANGE, alpha: .5 * sstep(.3, 1, lt) });
+    QUOTE.forEach((s, i) => {
+      const p = eio((lt - .8 - i * 1.15) / 1.1); if (p <= 0) return;
+      ctx.save(); ctx.beginPath(); ctx.rect(110, 690 + i * 104, 900 * p, 110); ctx.clip();
+      text(s, 130, 750 + i * 104, { size: 70, weight: 700, color: CREAM, glow: 'rgba(255,210,150,.2)', blur: 18 }); ctx.restore();
+    });
+    text('—— Olin Miller, 1936', W - 120, 1230, { font: LAT, style: 'italic', weight: 600, size: 44, color: ORANGE, align: 'right', alpha: sstep(5.6, 6.3, lt) });
+  },
+});
+// ---------------------------------------------------------------- 97.5–103.6 这一次，按下发送
+shot({
+  t0: 97.5, t1: 103.6,
+  draw(lt, d, T) {
+    floor('#141a25', '#05070a'); bokeh(T, 1);
+    const send = clamp((lt - 2.2) / .6), fly = eio((lt - 2.4) / .9);
+    inputBox(lt, 1, send > .15 ? 0 : DRAFT.length, { send, label: lt > 2.6 ? '已发送' : '草稿' });
+    if (lt > 2.3) {                                       // 发出去的那一条
+      const a = sstep(2.3, 2.6, lt), y = lerp(910, 560, fly);
+      ctx.save(); ctx.globalAlpha = a; ctx.font = `500 44px ${SANS}`; const w = ctx.measureText(DRAFT).width + 70;
+      rr(W - 110 - w, y - 46, w, 92, 46, TEAL); text(DRAFT, W - 110 - w + 35, y, { font: SANS, size: 44, color: '#0c1a1b' });
+      text('刚刚', W - 110, y + 80, { font: SANS, size: 26, color: DIM, align: 'right', alpha: sstep(3.4, 3.9, lt) });
+      ctx.restore();
+    }
+  },
+});
+// ---------------------------------------------------------------- 103.6–110.5 结尾的问题
+shot({
+  t0: 103.6, t1: 110.5, fo: 1.2,
+  draw(lt, d, T) {
+    floor('#16120e', '#050403');
+    ctx.save(); ctx.lineWidth = 2.5;
+    for (const [col, ph, amp] of [[O_RGB, 0, 1], [T_RGB, 2.1, .8]]) {
+      ctx.strokeStyle = `rgba(${col},${.7 * sstep(.2, 1.2, lt)})`; ctx.shadowColor = `rgba(${col},.8)`; ctx.shadowBlur = 12; ctx.beginPath();
+      for (let x = -20; x <= W + 20; x += 8) { const y = 1260 + Math.sin(x * .012 + lt * .8 + ph) * 26 * amp * (1 - sstep(2, 5, lt) * .7); x < -10 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); }
+      ctx.stroke();
+    }
+    ctx.restore();
+    text('此刻，', W / 2, 760, { size: 64, weight: 700, align: 'center', alpha: sstep(.6, 1.4, lt), ls: 6 });
+    text('你还在意谁的目光？', W / 2, 860, { size: 64, weight: 700, align: 'center', alpha: sstep(1.2, 2, lt), ls: 6 });
+    text('评论区，说说你最近一次「社死」', W / 2, 980, { size: 34, weight: 500, align: 'center', color: DIM, alpha: sstep(2.8, 3.6, lt), ls: 4 });
+  },
+});
+
+// ======================================================================== 字幕（左下角，参考视频的样式）
+// [起, 止, 文本]；「」里的字用橙色
+const SUBS = [
+  [.8, 4.6, '凌晨 1:47。'], [5, 10, '写好了，又删掉。第三次。'],
+  [DROP + .3, 23.3, '走进教室，总觉得全班都在看你。'],
+  [23.8, 29.5, '一张自拍，修了四十分钟。'],
+  [30, 35.8, '说错一句话，凌晨两点还在复盘。'],
+  [36.4, 40.4, '2000 年，康奈尔大学的一个实验。'],
+  [40.7, 45.2, '一个学生穿着一件很尴尬的 T 恤，走进教室。'],
+  [L_G, 49.8, '他以为，一半的人都注意到了。'],
+  [L_ACT, 51.6, '实际上——'],
+  [L_REAL, 55.8, '不到四分之一。'],
+  [56.4, 59.9, '心理学把它叫做「聚光灯效应」。'],
+  [60.2, 63.4, '我们总以为，自己站在舞台中央。'],
+  [63.9, 69.7, '可观众席上，大多是空位。'],
+  [70.4, 74.8, '社交媒体，把想象中的观众，变成了数字。'],
+  [75.1, 79.3, '点赞，浏览，已读。'],
+  [80.2, 84.6, '可每个人，都站在自己的那束光里，'],
+  [84.9, 89.2, '忙着担心自己。'],
+  [98, 103.3, '这一次，你按下了发送。'],
+];
+const SUB = { x: 96, y: 1420, size: 46, max: 880, lh: 66 };
+function subLines(s) {
+  const runs = []; let hi = false;
+  for (const ch of s) { if (ch === '「') { hi = true; continue; } if (ch === '」') { hi = false; continue; } runs.push({ ch, hi }); }
+  ctx.font = `500 ${SUB.size}px ${SERIF}`; ctx.letterSpacing = '2px';
+  const width = cs => cs.reduce((w, c) => w + ctx.measureText(c.ch).width + 2, 0);
+  if (width(runs) <= SUB.max) return [runs];
+  let best = Math.floor(runs.length / 2), bd = 1e9;
+  runs.forEach((c, i) => { if ('，、'.includes(c.ch) && Math.abs(i - runs.length / 2) < bd) { bd = Math.abs(i - runs.length / 2); best = i + 1; } });
+  return [runs.slice(0, best), runs.slice(best)];
+}
+function subtitles(T) {
+  const g = ctx.createLinearGradient(0, 1240, 0, 1600); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(.45, 'rgba(0,0,0,.5)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 1240, W, 360);
+  for (const [a0, b0, s] of SUBS) {
+    if (T < a0 - .1 || T > b0 + .1) continue;
+    const a = win(T, a0, b0, .35, .35); if (a <= 0) continue;
+    const lines = subLines(s);
+    lines.forEach((ln, i) => {
+      let x = SUB.x; const y = SUB.y + (i - (lines.length - 1)) * SUB.lh;
+      ctx.font = `500 ${SUB.size}px ${SERIF}`; ctx.letterSpacing = '2px';
+      ln.forEach(c => { const w = ctx.measureText(c.ch).width + 2; text(c.ch, x, y, { size: SUB.size, weight: 500, color: c.hi ? ORANGE : CREAM, alpha: a, glow: 'rgba(0,0,0,.9)', blur: 12 }); x += w; });
+    });
+  }
+}
+
+// ======================================================================== 顶部分段进度条
+const SECTIONS = [['钩子', 0, DROP], ['共鸣', DROP, 36], ['实验', 36, 56], ['起名字', 56, 70], ['社会现象', 70, CALM], ['结尾', CALM, 110.5]];
+const TOTAL = 110.5;
+const PB = { y: 236, h: 4, x0: 96, x1: 984, gap: 10 };
+function progress(T) {
+  const span = PB.x1 - PB.x0 - PB.gap * (SECTIONS.length - 1);
+  let x = PB.x0, cur = 0;
+  SECTIONS.forEach(([name, a, b], i) => {
+    const w = span * (b - a) / TOTAL, f = clamp((T - a) / (b - a)); if (T >= a) cur = i;
+    rr(x, PB.y, w, PB.h, 2, 'rgba(255,255,255,.16)');
+    if (f > 0) { ctx.save(); if (f < 1) { ctx.shadowColor = `rgba(${O_RGB},.9)`; ctx.shadowBlur = 10; } rr(x, PB.y, Math.max(PB.h, w * f), PB.h, 2, f < 1 ? ORANGE : 'rgba(236,230,218,.75)'); ctx.restore(); }
+    x += w + PB.gap;
+  });
+  text(`${String(cur + 1).padStart(2, '0')}  ${SECTIONS[cur][0]}`, PB.x0, PB.y - 32, { size: 28, weight: 500, color: CREAM, alpha: .85, ls: 4 });
+  text(`${String(cur + 1).padStart(2, '0')} / ${String(SECTIONS.length).padStart(2, '0')}`, PB.x1, PB.y - 32, { font: LAT, weight: 600, size: 30, color: DIM, align: 'right', ls: 2 });
+}
+
+// ======================================================================== 帧
+const shotAt = T => { let s = SHOTS[0]; for (const S of SHOTS) if (T >= S.t0) s = S; return s; };
+function frame(T) {
+  T = clamp(T, 0, TOTAL - 1e-3);
+  const S = shotAt(T), lt = T - S.t0, d = S.t1 - S.t0;
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.letterSpacing = '0px'; ctx.setLineDash([]);
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  ctx.save();
+  const z = 1 + .025 * lt / d; ctx.translate(W / 2, H * .5); ctx.scale(z, z); ctx.translate(-W / 2, -H * .5);   // 缓慢推近
+  S.draw(lt, d, T);
+  ctx.restore();
+  const dip = 1 - win(lt, 0, d, S.fi ?? .45, S.fo ?? .45);
+  if (dip > 0) { ctx.fillStyle = `rgba(0,0,0,${dip})`; ctx.fillRect(0, 0, W, H); }
+  post(T); subtitles(T); progress(T);
+}
+
+// ======================================================================== 字体、播放与导出接口
+let fontsReady = false;
+Promise.all([['900', SERIF], ['700', SERIF], ['500', SERIF], ['700', SANS], ['500', SANS], ['italic 500', LAT], ['italic 600', LAT], ['600', LAT]]
+  .map(([w, f]) => document.fonts.load(`${w} 40px ${f}`, '聚光灯效应 Aa')))
+  .then(() => document.fonts.ready).then(() => { fontsReady = true; frame(0); });
+window.__ready = () => fontsReady;
+window.__frame = (t, q = .95) => { frame(t); return cv.toDataURL('image/jpeg', q); };
+window.__duration = () => TOTAL;
+window.__cues = () => ({ total: TOTAL, cues: [], sections: SECTIONS.map(([name, t0, t1]) => ({ name, t0, t1, lines: [] })) });
+
+if (!EXPORT) {
+  const au = new Audio('bgm.m4a');
+  let playing = false, clock0 = 0, pausedAt = 0, useAudio = true;
+  const now = () => useAudio && !au.paused ? au.currentTime : playing ? (performance.now() - clock0) / 1000 : pausedAt;
+  function loop() { if (!playing) return; const T = now(); frame(T); if (T >= TOTAL) { playing = false; pausedAt = 0; au.pause(); return; } requestAnimationFrame(loop); }
+  function play() { playing = true; clock0 = performance.now() - pausedAt * 1000; au.currentTime = pausedAt; au.play().catch(() => { useAudio = false; }); requestAnimationFrame(loop); }
+  function pause() { pausedAt = now(); playing = false; au.pause(); }
+  document.getElementById('stage').onclick = () => playing ? pause() : play();
+  addEventListener('keydown', e => {
+    if (e.code === 'Space') { e.preventDefault(); playing ? pause() : play(); }
+    if (e.code === 'ArrowRight' || e.code === 'ArrowLeft') { const t = clamp(now() + (e.code === 'ArrowRight' ? 5 : -5), 0, TOTAL); pausedAt = t; clock0 = performance.now() - t * 1000; au.currentTime = t; if (!playing) frame(t); }
+  });
+} else document.getElementById('hint').remove();
+</script>
+</body>
+</html>
