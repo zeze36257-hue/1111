@@ -15,17 +15,19 @@ ffmpeg -y -i ident_raw.mp4 -c:v libx264 -crf 18 -pix_fmt yuv420p -r 30 -c:a aac 
 
 头像：用浏览器打开 `index.html?avatar=1`，导出画布后裁切猫所在的正方形区域。
 
-## 接到正片前面
+## 拼接：片头 + 正片 + 片尾
 
 ```bash
-ffmpeg -i 片头_黑猫不说话.mp4 -i 正片.mp4 -filter_complex \
-  "[0:v]fps=30,format=yuv420p,setsar=1[v0];[1:v]fps=30,format=yuv420p,setsar=1[v1];[0:a]aresample=44100[a0];[1:a]aresample=44100[a1];[v0][a0][v1][a1]concat=n=2:v=1:a=1[v][a]" \
+ffmpeg -i 片头_黑猫不说话.mp4 -i 正片.mp4 -i 片尾.mp4 -filter_complex \
+  "[0:v]fps=30,format=yuv420p,setsar=1[v0];[1:v]fps=30,format=yuv420p,setsar=1[v1];[2:v]fps=30,format=yuv420p,setsar=1[v2];[0:a]aresample=44100[a0];[1:a]aresample=44100[a1];[2:a]aresample=44100[a2];[v0][a0][v1][a1][v2][a2]concat=n=3:v=1:a=1[v][a]" \
   -map "[v]" -map "[a]" -c:v libx264 -crf 19 -c:a aac -b:a 192k -movflags +faststart 成片.mp4
 ```
 
 片头有自己的提示音，正片音乐仍从正片第 0 秒开始，所以正片内部的卡点不受影响。
 
-## 片尾（No.4 起使用，尚未制作）
+## 片尾（No.4 起使用）
+
+用 `node export.cjs --query outro=1 --audio outro.wav --out <输出>` 导出；下期预告在 `index.html` 的 `NEXT` 常量里，每期更新后重新运行 `fetch_fonts.py`。提示音用 `python sting.py outro` 生成 `outro.wav`。
 
 约 2.5 秒，接在每期结尾的提问之后：
 
@@ -44,4 +46,4 @@ ffmpeg -i 片头_黑猫不说话.mp4 -i 正片.mp4 -filter_complex \
 - 风格：俯视与留白、左下角衬线字幕、数字注释、无配音；橙 = 你，青 = 对方。
 - 正片第一帧就是钩子；正片时长 60–80 秒；结尾一个好回答的问题。
 - 研究数据先上网核实，出处写进各期 README；证据弱的地方字幕用“可能”。
-- 下一期计划：No.4《为什么你忘不掉的，偏偏是没在一起的人》（蔡格尼克效应 + 表达性写作）。
+- 已发布：No.4《没写完的结局》（no4）。下一期计划（片尾已预告）：No.5《为什么 TA 一喜欢你，你就下头了》。

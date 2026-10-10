@@ -3,6 +3,7 @@
 //   node export.cjs --cues cues.json                 (sound-effect cue sheet + line timings for music.py)
 //   node export.cjs --shots 1,12.5,40                (single frames to shots/ for checking)
 //   node export.cjs [--workers 4] [--audio music.wav] [--out out.mp4]
+//   node export.cjs --query outro=1 ...     (extra URL parameters for the page, e.g. the outro mode)
 //
 // Every frame is a pure function of its time, so workers render frames out of order and the writer
 // puts them back in order; the video is identical for any worker count.
@@ -25,7 +26,7 @@ const exe = process.env.CHROME || undefined;
     const p = await browser.newPage({ viewport: { width: 1080, height: 1920 } });
     p.on('pageerror', e => console.error('page error:', e.message));
     p.on('console', m => m.type() === 'error' && console.error('console.error:', m.text()));
-    await p.goto(pathToFileURL(page).href + '?export=1');
+    await p.goto(pathToFileURL(page).href + '?export=1' + (args.query ? '&' + args.query : ''));
     await p.waitForFunction(() => window.__ready && window.__ready(), null, { timeout: 60000 });
     return p;
   }));

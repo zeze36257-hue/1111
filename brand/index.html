@@ -17,9 +17,12 @@
 <script>
 'use strict';
 // 黑猫不说话 · 片头（1.8 秒）：黑暗里睁开一双异色瞳（橙 / 青），轮廓光勾出一只坐着的黑猫，名字出现，眨一下眼，切进正片。
-// ?avatar=1 时只画猫、不画文字，用来导出头像。每一帧都是时间 T 的纯函数。
-const W = 1080, H = 1920, DUR = 1.8;
-const AVATAR = /[?&]avatar=1/.test(location.search);
+// ?avatar=1 时只画猫、不画文字，用来导出头像；?outro=1 时是片尾（2.5 秒）：猫坐在中央，关注 + 下期预告，最后在黑暗里闭上眼，
+// 和片头“在黑暗里睁眼”首尾相接，TikTok 自动重播时无缝衔接。每一帧都是时间 T 的纯函数。
+const AVATAR = /[?&]avatar=1/.test(location.search), OUTRO = /[?&]outro=1/.test(location.search);
+const W = 1080, H = 1920, DUR = OUTRO ? 2.5 : 1.8;
+// 每期更新：片尾的下期预告（改完重新运行 fetch_fonts.py，字体子集才会包含新字）
+const NEXT = '下一期 · No.5《为什么 TA 一喜欢你，你就下头了》';
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
 const PI = Math.PI, TAU = PI * 2;
 const clamp = (x, a = 0, b = 1) => x < a ? a : x > b ? b : x;
@@ -104,6 +107,14 @@ function frame(T) {
   const g = ctx.createRadialGradient(W / 2, 860, 40, W / 2, 860, H * .7);
   g.addColorStop(0, '#11141c'); g.addColorStop(1, '#020203'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
   if (AVATAR) { drawCat(.3, 1, 1); return; }
+  if (OUTRO) {                                      // 片尾：睁着眼 → 文字 → 光散去 → 最后闭眼
+    const reveal = sstep(0, .35, T) * (1 - sstep(1.4, 1.9, T)), open = 1 - sstep(1.65, 2.15, T);
+    drawCat(T + 3, reveal, open);
+    const ta = sstep(.25, .6, T) * (1 - sstep(1.5, 1.9, T));
+    text('关注 @黑猫不说话', W / 2 + 4, 1230, { size: 66, weight: 900, ls: 8, color: CREAM, alpha: ta, glow: 'rgba(255,225,180,.25)', blur: 24 });
+    text(NEXT, W / 2 + 3, 1322, { size: 34, weight: 500, ls: 6, color: ORANGE, alpha: sstep(.45, .8, T) * (1 - sstep(1.5, 1.9, T)) });
+    return;
+  }
   // 0–0.25 睁眼；0.95–1.05 眨一下；1.55–1.75 闭眼切走
   const open = eout(T / .25) * (T > .95 && T < 1.07 ? Math.abs(T - 1.01) / .06 : 1) * (1 - sstep(1.55, 1.72, T));
   const reveal = sstep(.2, .75, T) * (1 - sstep(1.5, 1.75, T));
@@ -116,8 +127,8 @@ function frame(T) {
 }
 
 let fontsReady = false;
-Promise.all(['900', '500'].map(w => document.fonts.load(`${w} 40px ${SERIF}`, '黑猫不说话')))
-  .then(() => document.fonts.ready).then(() => { fontsReady = true; frame(AVATAR ? 0 : 1.2); });
+Promise.all(['900', '500'].map(w => document.fonts.load(`${w} 40px ${SERIF}`, '黑猫不说话关注')))
+  .then(() => document.fonts.ready).then(() => { fontsReady = true; frame(AVATAR ? 0 : OUTRO ? 1 : 1.2); });
 window.__ready = () => fontsReady;
 window.__frame = (t, q = .95) => { frame(t); return cv.toDataURL('image/jpeg', q); };
 window.__duration = () => DUR;
