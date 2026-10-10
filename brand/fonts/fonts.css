@@ -1,0 +1,64 @@
+@font-face {
+  font-family: 'Noto Serif SC';
+  font-style: normal;
+  font-weight: 500;
+  font-display: block;
+  src: url(NotoSerifSC-500.woff2) format('woff2');
+  unicode-range: U+a, U+20-7e, U+b7, U+2013, U+3001-3002, U+4e00, U+4e0a-4e0b, U+4e0d, U+4e24, U+4eba, U+4f53, U+50cf, U+5149, U+51fa, U+51fd, U+5207, U+5230, U+524d, U+52fe, U+534a, U+539f, U+53cc, U+53e3, U+53ea, U+53f3, U+540d, U+5728, U+5730, U+5750, U+5934, U+5b50, U+5b57, U+5bf9, U+5bfc, U+5c3e, U+5c40, U+5de6, U+5df4, U+5e27, U+5e94, U+5ed3, U+5f00, U+5f02, U+5f71, U+5fc3, U+6570, U+6587, U+65f6, U+662f, U+6697, U+6765, U+6807, U+6a59, U+6b63, U+6bcf, U+70b9, U+7247, U+732b, U+73b0, U+7528, U+753b, U+7684, U+7728, U+773c, U+7740-7741, U+775b, U+77b3, U+79d2, U+7ea6, U+7eaf, U+7ed5, U+8033, U+80e1, U+80f8, U+8272, U+8bdd, U+8bf4, U+8d70, U+8eab, U+8f6e, U+8fb9, U+8fdb, U+90e8, U+90fd, U+91cc, U+95ed, U+95f4, U+9752, U+9762, U+987b, U+9ad8, U+9ed1, U+ff08-ff09, U+ff0c, U+ff1a-ff1b;
+}
+@font-face {
+  font-family: 'Noto Serif SC';
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+  src: url(NotoSerifSC-700.woff2) format('woff2');
+  unicode-range: U+a, U+20-7e, U+b7, U+2013, U+3001-3002, U+4e00, U+4e0a-4e0b, U+4e0d, U+4e24, U+4eba, U+4f53, U+50cf, U+5149, U+51fa, U+51fd, U+5207, U+5230, U+524d, U+52fe, U+534a, U+539f, U+53cc, U+53e3, U+53ea, U+53f3, U+540d, U+5728, U+5730, U+5750, U+5934, U+5b50, U+5b57, U+5bf9, U+5bfc, U+5c3e, U+5c40, U+5de6, U+5df4, U+5e27, U+5e94, U+5ed3, U+5f00, U+5f02, U+5f71, U+5fc3, U+6570, U+6587, U+65f6, U+662f, U+6697, U+6765, U+6807, U+6a59, U+6b63, U+6bcf, U+70b9, U+7247, U+732b, U+73b0, U+7528, U+753b, U+7684, U+7728, U+773c, U+7740-7741, U+775b, U+77b3, U+79d2, U+7ea6, U+7eaf, U+7ed5, U+8033, U+80e1, U+80f8, U+8272, U+8bdd, U+8bf4, U+8d70, U+8eab, U+8f6e, U+8fb9, U+8fdb, U+90e8, U+90fd, U+91cc, U+95ed, U+95f4, U+9752, U+9762, U+987b, U+9ad8, U+9ed1, U+ff08-ff09, U+ff0c, U+ff1a-ff1b;
+}
+@font-face {
+  font-family: 'Noto Serif SC';
+  font-style: normal;
+  font-weight: 900;
+  font-display: block;
+  src: url(NotoSerifSC-900.woff2) format('woff2');
+  unicode-range: U+a, U+20-7e, U+b7, U+2013, U+3001-3002, U+4e00, U+4e0a-4e0b, U+4e0d, U+4e24, U+4eba, U+4f53, U+50cf, U+5149, U+51fa, U+51fd, U+5207, U+5230, U+524d, U+52fe, U+534a, U+539f, U+53cc, U+53e3, U+53ea, U+53f3, U+540d, U+5728, U+5730, U+5750, U+5934, U+5b50, U+5b57, U+5bf9, U+5bfc, U+5c3e, U+5c40, U+5de6, U+5df4, U+5e27, U+5e94, U+5ed3, U+5f00, U+5f02, U+5f71, U+5fc3, U+6570, U+6587, U+65f6, U+662f, U+6697, U+6765, U+6807, U+6a59, U+6b63, U+6bcf, U+70b9, U+7247, U+732b, U+73b0, U+7528, U+753b, U+7684, U+7728, U+773c, U+7740-7741, U+775b, U+77b3, U+79d2, U+7ea6, U+7eaf, U+7ed5, U+8033, U+80e1, U+80f8, U+8272, U+8bdd, U+8bf4, U+8d70, U+8eab, U+8f6e, U+8fb9, U+8fdb, U+90e8, U+90fd, U+91cc, U+95ed, U+95f4, U+9752, U+9762, U+987b, U+9ad8, U+9ed1, U+ff08-ff09, U+ff0c, U+ff1a-ff1b;
+}
+@font-face {
+  font-family: 'Noto Sans SC';
+  font-style: normal;
+  font-weight: 500;
+  font-display: block;
+  src: url(NotoSansSC-500.woff2) format('woff2');
+  unicode-range: U+a, U+20-7e, U+b7, U+2013, U+3001-3002, U+4e00, U+4e0a-4e0b, U+4e0d, U+4e24, U+4eba, U+4f53, U+50cf, U+5149, U+51fa, U+51fd, U+5207, U+5230, U+524d, U+52fe, U+534a, U+539f, U+53cc, U+53e3, U+53ea, U+53f3, U+540d, U+5728, U+5730, U+5750, U+5934, U+5b50, U+5b57, U+5bf9, U+5bfc, U+5c3e, U+5c40, U+5de6, U+5df4, U+5e27, U+5e94, U+5ed3, U+5f00, U+5f02, U+5f71, U+5fc3, U+6570, U+6587, U+65f6, U+662f, U+6697, U+6765, U+6807, U+6a59, U+6b63, U+6bcf, U+70b9, U+7247, U+732b, U+73b0, U+7528, U+753b, U+7684, U+7728, U+773c, U+7740-7741, U+775b, U+77b3, U+79d2, U+7ea6, U+7eaf, U+7ed5, U+8033, U+80e1, U+80f8, U+8272, U+8bdd, U+8bf4, U+8d70, U+8eab, U+8f6e, U+8fb9, U+8fdb, U+90e8, U+90fd, U+91cc, U+95ed, U+95f4, U+9752, U+9762, U+987b, U+9ad8, U+9ed1, U+ff08-ff09, U+ff0c, U+ff1a-ff1b;
+}
+@font-face {
+  font-family: 'Noto Sans SC';
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+  src: url(NotoSansSC-700.woff2) format('woff2');
+  unicode-range: U+a, U+20-7e, U+b7, U+2013, U+3001-3002, U+4e00, U+4e0a-4e0b, U+4e0d, U+4e24, U+4eba, U+4f53, U+50cf, U+5149, U+51fa, U+51fd, U+5207, U+5230, U+524d, U+52fe, U+534a, U+539f, U+53cc, U+53e3, U+53ea, U+53f3, U+540d, U+5728, U+5730, U+5750, U+5934, U+5b50, U+5b57, U+5bf9, U+5bfc, U+5c3e, U+5c40, U+5de6, U+5df4, U+5e27, U+5e94, U+5ed3, U+5f00, U+5f02, U+5f71, U+5fc3, U+6570, U+6587, U+65f6, U+662f, U+6697, U+6765, U+6807, U+6a59, U+6b63, U+6bcf, U+70b9, U+7247, U+732b, U+73b0, U+7528, U+753b, U+7684, U+7728, U+773c, U+7740-7741, U+775b, U+77b3, U+79d2, U+7ea6, U+7eaf, U+7ed5, U+8033, U+80e1, U+80f8, U+8272, U+8bdd, U+8bf4, U+8d70, U+8eab, U+8f6e, U+8fb9, U+8fdb, U+90e8, U+90fd, U+91cc, U+95ed, U+95f4, U+9752, U+9762, U+987b, U+9ad8, U+9ed1, U+ff08-ff09, U+ff0c, U+ff1a-ff1b;
+}
+@font-face {
+  font-family: 'Cormorant Garamond';
+  font-style: italic;
+  font-weight: 500;
+  font-display: block;
+  src: url(CormorantGaramond-500i.woff2) format('woff2');
+  unicode-range: U+a, U+20-7e, U+b7, U+2013, U+3001-3002, U+4e00, U+4e0a-4e0b, U+4e0d, U+4e24, U+4eba, U+4f53, U+50cf, U+5149, U+51fa, U+51fd, U+5207, U+5230, U+524d, U+52fe, U+534a, U+539f, U+53cc, U+53e3, U+53ea, U+53f3, U+540d, U+5728, U+5730, U+5750, U+5934, U+5b50, U+5b57, U+5bf9, U+5bfc, U+5c3e, U+5c40, U+5de6, U+5df4, U+5e27, U+5e94, U+5ed3, U+5f00, U+5f02, U+5f71, U+5fc3, U+6570, U+6587, U+65f6, U+662f, U+6697, U+6765, U+6807, U+6a59, U+6b63, U+6bcf, U+70b9, U+7247, U+732b, U+73b0, U+7528, U+753b, U+7684, U+7728, U+773c, U+7740-7741, U+775b, U+77b3, U+79d2, U+7ea6, U+7eaf, U+7ed5, U+8033, U+80e1, U+80f8, U+8272, U+8bdd, U+8bf4, U+8d70, U+8eab, U+8f6e, U+8fb9, U+8fdb, U+90e8, U+90fd, U+91cc, U+95ed, U+95f4, U+9752, U+9762, U+987b, U+9ad8, U+9ed1, U+ff08-ff09, U+ff0c, U+ff1a-ff1b;
+}
+@font-face {
+  font-family: 'Cormorant Garamond';
+  font-style: italic;
+  font-weight: 600;
+  font-display: block;
+  src: url(CormorantGaramond-600i.woff2) format('woff2');
+  unicode-range: U+a, U+20-7e, U+b7, U+2013, U+3001-3002, U+4e00, U+4e0a-4e0b, U+4e0d, U+4e24, U+4eba, U+4f53, U+50cf, U+5149, U+51fa, U+51fd, U+5207, U+5230, U+524d, U+52fe, U+534a, U+539f, U+53cc, U+53e3, U+53ea, U+53f3, U+540d, U+5728, U+5730, U+5750, U+5934, U+5b50, U+5b57, U+5bf9, U+5bfc, U+5c3e, U+5c40, U+5de6, U+5df4, U+5e27, U+5e94, U+5ed3, U+5f00, U+5f02, U+5f71, U+5fc3, U+6570, U+6587, U+65f6, U+662f, U+6697, U+6765, U+6807, U+6a59, U+6b63, U+6bcf, U+70b9, U+7247, U+732b, U+73b0, U+7528, U+753b, U+7684, U+7728, U+773c, U+7740-7741, U+775b, U+77b3, U+79d2, U+7ea6, U+7eaf, U+7ed5, U+8033, U+80e1, U+80f8, U+8272, U+8bdd, U+8bf4, U+8d70, U+8eab, U+8f6e, U+8fb9, U+8fdb, U+90e8, U+90fd, U+91cc, U+95ed, U+95f4, U+9752, U+9762, U+987b, U+9ad8, U+9ed1, U+ff08-ff09, U+ff0c, U+ff1a-ff1b;
+}
+@font-face {
+  font-family: 'Cormorant Garamond';
+  font-style: normal;
+  font-weight: 600;
+  font-display: block;
+  src: url(CormorantGaramond-600.woff2) format('woff2');
+  unicode-range: U+a, U+20-7e, U+b7, U+2013, U+3001-3002, U+4e00, U+4e0a-4e0b, U+4e0d, U+4e24, U+4eba, U+4f53, U+50cf, U+5149, U+51fa, U+51fd, U+5207, U+5230, U+524d, U+52fe, U+534a, U+539f, U+53cc, U+53e3, U+53ea, U+53f3, U+540d, U+5728, U+5730, U+5750, U+5934, U+5b50, U+5b57, U+5bf9, U+5bfc, U+5c3e, U+5c40, U+5de6, U+5df4, U+5e27, U+5e94, U+5ed3, U+5f00, U+5f02, U+5f71, U+5fc3, U+6570, U+6587, U+65f6, U+662f, U+6697, U+6765, U+6807, U+6a59, U+6b63, U+6bcf, U+70b9, U+7247, U+732b, U+73b0, U+7528, U+753b, U+7684, U+7728, U+773c, U+7740-7741, U+775b, U+77b3, U+79d2, U+7ea6, U+7eaf, U+7ed5, U+8033, U+80e1, U+80f8, U+8272, U+8bdd, U+8bf4, U+8d70, U+8eab, U+8f6e, U+8fb9, U+8fdb, U+90e8, U+90fd, U+91cc, U+95ed, U+95f4, U+9752, U+9762, U+987b, U+9ad8, U+9ed1, U+ff08-ff09, U+ff0c, U+ff1a-ff1b;
+}

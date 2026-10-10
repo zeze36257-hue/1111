@@ -1,8 +1,8 @@
 # 黑猫不说话 · 心理学 No.3《四种依恋类型，你是哪一种？》
 
-1080×1920、30fps，78 秒。沿用系列风格（俯视与留白、左下角衬线字幕、数字注释、无配音），水印 @黑猫不说话，进度条在 TikTok 顶部栏之下，背景音乐同前两期（截到 78 秒，在音乐自然回落前淡出）。
+1080×1920、30fps，79.8 秒（1.8 秒频道片头 + 78 秒正片）。沿用系列风格（俯视与留白、左下角衬线字幕、数字注释、无配音），水印 @黑猫不说话，进度条在 TikTok 顶部栏之下，背景音乐同前两期（截到 78 秒，在音乐自然回落前淡出）。
 
-这一期的两处改进：第一帧就是钩子（可直接做封面）；时长缩短到 78 秒。
+这一期的改进：正片第一帧就是钩子；时长缩短到 78 秒；前面接上频道片头（见 `../brand/`）。
 
 ## 结构
 
@@ -27,5 +27,6 @@
 export NODE_PATH=$(npm root -g)
 ffmpeg -y -i ../video2/bgm.m4a -t 78 -af "afade=t=out:st=74.5:d=3.5,loudnorm=I=-14:TP=-1.5" bgm_cut.wav
 python fetch_fonts.py
-node export.cjs --workers 4 --audio bgm_cut.wav --out 依恋类型_No3.mp4
+node export.cjs --workers 4 --audio bgm_cut.wav --out body.mp4
+# 再按 ../brand/README.md 把片头接到 body.mp4 前面，得到 依恋类型_No3.mp4
 ```
