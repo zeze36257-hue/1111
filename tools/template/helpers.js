@@ -33,3 +33,9 @@ function chatHeader(a, status = '') {
 }
 const pad2 = n => String(Math.floor(n)).padStart(2, '0');
 
+function phoneFrame(cx, cy, w, h, a) {
+  ctx.save(); ctx.globalAlpha *= a;
+  ctx.shadowColor = 'rgba(120,170,255,.35)'; ctx.shadowBlur = 60; rr(cx - w / 2, cy - h / 2, w, h, 56, '#15151d'); ctx.shadowBlur = 0;
+  rr(cx - w / 2, cy - h / 2, w, h, 56, null, 'rgba(255,255,255,.25)', 3);
+  ctx.restore();
+}
