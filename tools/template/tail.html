@@ -5,10 +5,34 @@ function subLines(s) {
   ctx.font = `500 ${SUB.size}px ${SERIF}`; ctx.letterSpacing = '2px';
   const width = cs => cs.reduce((w, c) => w + ctx.measureText(c.ch).width + 2, 0);
   if (width(runs) <= SUB.max) return [runs];
-  let best = Math.floor(runs.length / 2), bd = 1e9;
-  runs.forEach((c, i) => { if ('，、：；'.includes(c.ch) && Math.abs(i - runs.length / 2) < bd) { bd = Math.abs(i - runs.length / 2); best = i + 1; } });
-  return [runs.slice(0, best), runs.slice(best)];
+  // 两行：优先在标点后断，取最均衡且都放得下的位置；没有就按字断（标点不放行首）
+  const P = '，、：；。？';
+  let best = -1, bd = 1e9;
+  runs.forEach((c, i) => {
+    if (!P.includes(c.ch) || i === runs.length - 1) return;
+    const a = width(runs.slice(0, i + 1)), b = width(runs.slice(i + 1));
+    if (a <= SUB.max && b <= SUB.max && Math.abs(a - b) < bd) { bd = Math.abs(a - b); best = i + 1; }
+  });
+  if (best < 0) runs.forEach((c, i) => {
+    if (i === 0 || P.includes(c.ch) || /\w\w/.test(runs[i - 1].ch + c.ch)) return;   // 不拆英文单词和数字
+    const a = width(runs.slice(0, i)), b = width(runs.slice(i));
+    if (a <= SUB.max && b <= SUB.max && Math.abs(a - b) < bd) { bd = Math.abs(a - b); best = i; }
+  });
+  if (best > 0) return [runs.slice(0, best), runs.slice(best)];
+  // 两行还放不下：按宽度逐字排，尽量在标点后断行
+  const lines = []; let cur = [], lastP = -1;
+  for (const c of runs) {
+    cur.push(c);
+    if (width(cur) > SUB.max) {                       // 标点不放在行首：若超出的正是标点，连同前一个字一起换行
+      const cut = lastP > 0 ? lastP : P.includes(c.ch) ? cur.length - 2 : cur.length - 1;
+      lines.push(cur.slice(0, cut)); cur = cur.slice(cut); lastP = -1;
+      cur.forEach((x, i) => { if (P.includes(x.ch)) lastP = i + 1; });
+    } else if (P.includes(c.ch)) lastP = cur.length;
+  }
+  if (cur.length) lines.push(cur);
+  return lines;
 }
+window.__subWidths = () => SUBS.map(([a, b, s]) => ({ s, lines: subLines(s).map(l => { ctx.font = `500 ${SUB.size}px ${SERIF}`; ctx.letterSpacing = '2px'; return Math.round(l.reduce((w, c) => w + ctx.measureText(c.ch).width + 2, 0)); }) }));
 function subtitles(T) {
   const g = ctx.createLinearGradient(0, 1240, 0, 1600); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(.45, 'rgba(0,0,0,.5)'); g.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = g; ctx.fillRect(0, 1240, W, 360);
