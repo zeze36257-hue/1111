@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{TITLE}}</title>
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>
+  :root { --bg: #000; }
+  html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; }
+  #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  canvas { height: 100vh; width: 56.25vh; max-width: 100vw; max-height: 177.78vw; background: #000; display: block; }
+  #hint { position: fixed; left: 0; right: 0; bottom: 16px; text-align: center; color: #888; font: 14px "Noto Sans SC", sans-serif; }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c" width="1080" height="1920"></canvas></div>
+<div id="hint">点击播放 / 暂停 · ← → 快退快进</div>
+<script>
+'use strict';
+// 黑猫不说话 · 心理学 No.{{NO}}《{{FULLTITLE}}》。沿用系列风格：俯视与留白、数字叙事、节奏卡在背景音乐的段落上。
+// 每一帧都是时间 T 的纯函数：实时预览与逐帧导出（?export=1）画出的是同一帧。
+const W = 1080, H = 1920;
+const EXPORT = /[?&]export=1/.test(location.search);
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const PI = Math.PI, TAU = PI * 2;
+const clamp = (x, a = 0, b = 1) => x < a ? a : x > b ? b : x;
+const lerp = (a, b, t) => a + (b - a) * t;
+const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+const eout = t => 1 - Math.pow(1 - clamp(t), 3);
+const eio = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const win = (t, a, b, fi = .4, fo = .4) => sstep(a, a + fi, t) * (1 - sstep(b - fo, b, t));
+function mulberry(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+
+const SERIF = '"Noto Serif SC", serif', SANS = '"Noto Sans SC", sans-serif', LAT = '"Cormorant Garamond", serif';
+const ORANGE = '#f2a14a', TEAL = '#4fd6c4', CREAM = '#ece6da', DIM = '#8a93a3';
+const O_RGB = '242,161,74', T_RGB = '79,214,196';
+
+// 背景音乐的段落（秒）：前奏 0–10.5，安静 10.5–17.25，全编制 17.25 起，89.5 回落
+const DROP = 17.25, CALM = 89.5;
+
+// ======================================================================== 基础绘制
+function text(s, x, y, o = {}) {
+  ctx.save();
+  ctx.font = `${o.style || ''} ${o.weight || 500} ${o.size || 44}px ${o.font || SERIF}`;
+  ctx.textAlign = o.align || 'left'; ctx.textBaseline = o.base || 'middle';
+  ctx.globalAlpha *= o.alpha ?? 1; ctx.letterSpacing = (o.ls || 0) + 'px';
+  if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = o.blur ?? 20; }
+  ctx.fillStyle = o.color || CREAM; ctx.fillText(s, x, y);
+  ctx.restore();
+}
+function rr(x, y, w, h, r, fill, stroke, lw = 2) {
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+}
+function floor(c0 = '#161d29', c1 = '#07090d', cx = W / 2, cy = H * .45) {
+  const g = ctx.createRadialGradient(cx, cy, 60, cx, cy, H * .85);
+  g.addColorStop(0, c0); g.addColorStop(1, c1); ctx.fillStyle = g; ctx.fillRect(-W, -H, W * 3, H * 3);
+}
+function tiles(x0, y0, w, h, step, col = 'rgba(150,170,210,.05)') {
+  ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = 1.5;
+  for (let x = x0; x <= x0 + w + .1; x += step) { ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x, y0 + h); ctx.stroke(); }
+  for (let y = y0; y <= y0 + h + .1; y += step) { ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x0 + w, y); ctx.stroke(); }
+  ctx.restore();
+}
+// 从正上方看到的一圈光
+function pool(x, y, r, a, col = '255,222,170', edge = true) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+  g.addColorStop(0, `rgba(${col},${.34 * a})`); g.addColorStop(.7, `rgba(${col},${.16 * a})`); g.addColorStop(1, `rgba(${col},0)`);
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+  if (edge) { ctx.strokeStyle = `rgba(${col},${.12 * a})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, r * .78, 0, TAU); ctx.stroke(); }
+  ctx.restore();
+}
+// 俯视的人：肩膀 + 头顶。dir 是面朝方向（弧度，-PI/2 为朝上）
+function human(x, y, s, o = {}) {
+  const a = o.alpha ?? 1; if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a; ctx.translate(x, y); ctx.rotate((o.dir ?? -PI / 2) + PI / 2);
+  if (o.phone) {                                     // 手机的光照亮脸前
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    const g = ctx.createRadialGradient(0, -s * .9, 0, 0, -s * .9, s * 1.6);
+    g.addColorStop(0, `rgba(150,200,255,${.35 * o.phone})`); g.addColorStop(1, 'rgba(150,200,255,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, -s * .9, s * 1.6, 0, TAU); ctx.fill(); ctx.restore();
+  }
+  const body = o.body || '#2a303c';
+  ctx.fillStyle = body; ctx.beginPath(); ctx.ellipse(0, s * .32, s * 1.12, s * .6, 0, 0, TAU); ctx.fill();
+  const sh = ctx.createLinearGradient(-s, 0, s, 0); sh.addColorStop(0, 'rgba(255,255,255,.08)'); sh.addColorStop(1, 'rgba(0,0,0,.25)');
+  ctx.fillStyle = sh; ctx.beginPath(); ctx.ellipse(0, s * .32, s * 1.12, s * .6, 0, 0, TAU); ctx.fill();
+  if (o.phone) rr(-s * .22, -s * 1.25, s * .44, s * .62, s * .08, `rgba(200,230,255,${.9 * o.phone})`);
+  ctx.fillStyle = o.hair || '#0c0e13'; ctx.beginPath(); ctx.arc(0, 0, s * .52, 0, TAU); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,.12)'; ctx.lineWidth = s * .08; ctx.beginPath(); ctx.arc(0, 0, s * .44, PI * 1.1, PI * 1.6); ctx.stroke();
+  ctx.restore();
+  if (o.ring) {                                      // 主角 / 被标记的人：头顶一圈彩色光环
+    ctx.save(); ctx.globalAlpha *= a * (o.ringA ?? 1);
+    ctx.shadowColor = o.ring; ctx.shadowBlur = 16; ctx.strokeStyle = o.ring; ctx.lineWidth = Math.max(2.5, s * .1);
+    ctx.beginPath(); ctx.arc(x, y, s * .78, 0, TAU); ctx.stroke(); ctx.restore();
+  }
+}
+// 注释标签：从目标点引一条细线到文字，可带大号数字
+function callout(x, y, dx, dy, a, big, small, col = CREAM, o = {}) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a;
+  const k = eout(o.grow ?? 1);
+  ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.globalAlpha *= .8;
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + dx * k, y + dy * k); ctx.lineTo(x + dx * k + Math.sign(dx || 1) * 40 * k, y + dy * k); ctx.stroke();
+  ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y, 5, 0, TAU); ctx.fill();
+  ctx.restore();
+  const tx = x + dx + Math.sign(dx || 1) * 56, al = dx >= 0 ? 'left' : 'right';
+  ctx.save(); ctx.globalAlpha *= a * sstep(.5, 1, o.grow ?? 1);
+  ctx.font = `700 ${o.bigSize || 64}px ${SERIF}`; ctx.letterSpacing = '0px';
+  const bw = big ? ctx.measureText(big).width : 0;
+  if (big) text(big, tx, y + dy, { size: o.bigSize || 64, weight: 700, color: col, align: al });
+  if (small) text(small, dx >= 0 ? tx + bw + (big ? 14 : 0) : tx - bw - (big ? 14 : 0), y + dy + (big ? 6 : 0), { size: 34, weight: 500, color: o.smallCol || CREAM, align: al });
+  ctx.restore();
+}
+// 右上角的时间 / 年份标签（参考视频里的 2018、2020…）
+function stamp(s, a, sub) {
+  if (a <= 0) return;
+  text(s, W - 96, 412, { font: LAT, weight: 600, size: 54, color: CREAM, align: 'right', alpha: a * .9, ls: 4 });
+  if (sub) text(sub, W - 96, 460, { font: LAT, style: 'italic', weight: 500, size: 30, color: DIM, align: 'right', alpha: a });
+}
+const BOKEH = (() => { const r = mulberry(4); return Array.from({ length: 26 }, () => ({ x: r() * W, y: 300 + r() * 1300, r: 20 + r() * 50, p: r() * TAU, v: .2 + r() * .5 })); })();
+function bokeh(t, a) {
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  for (const b of BOKEH) {
+    const al = a * (.04 + .04 * Math.sin(t * b.v + b.p)), y = b.y - t * 8 * b.v;
+    const g = ctx.createRadialGradient(b.x, y, 0, b.x, y, b.r); g.addColorStop(0, `rgba(160,190,230,${al})`); g.addColorStop(1, 'rgba(160,190,230,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(b.x, y, b.r, 0, TAU); ctx.fill();
+  }
+  ctx.restore();
+}
+const GRAIN = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d'), im = g.createImageData(256, 256), r = mulberry(3);
+  for (let i = 0; i < im.data.length; i += 4) { const v = r() * 255; im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 255; }
+  g.putImageData(im, 0, 0); return c;
+})();
+function post(T) {
+  const v = ctx.createRadialGradient(W / 2, H * .46, H * .28, W / 2, H * .46, H * .8);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,.6)'); ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+  const f = Math.floor(T * 30), ox = (f * 97) % 256, oy = (f * 61) % 256;
+  ctx.save(); ctx.globalAlpha = .06; ctx.globalCompositeOperation = 'overlay';
+  ctx.fillStyle = ctx.createPattern(GRAIN, 'repeat'); ctx.translate(-ox, -oy); ctx.fillRect(0, 0, W + 256, H + 256); ctx.restore();
+}
+

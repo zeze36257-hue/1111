@@ -1,0 +1,96 @@
+const SUB = { x: 96, y: 1420, size: 46, max: 880, lh: 66 };
+function subLines(s) {
+  const runs = []; let hi = false;
+  for (const ch of s) { if (ch === '「') { hi = true; continue; } if (ch === '」') { hi = false; continue; } runs.push({ ch, hi }); }
+  ctx.font = `500 ${SUB.size}px ${SERIF}`; ctx.letterSpacing = '2px';
+  const width = cs => cs.reduce((w, c) => w + ctx.measureText(c.ch).width + 2, 0);
+  if (width(runs) <= SUB.max) return [runs];
+  let best = Math.floor(runs.length / 2), bd = 1e9;
+  runs.forEach((c, i) => { if ('，、：；'.includes(c.ch) && Math.abs(i - runs.length / 2) < bd) { bd = Math.abs(i - runs.length / 2); best = i + 1; } });
+  return [runs.slice(0, best), runs.slice(best)];
+}
+function subtitles(T) {
+  const g = ctx.createLinearGradient(0, 1240, 0, 1600); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(.45, 'rgba(0,0,0,.5)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 1240, W, 360);
+  for (const [a0, b0, s] of SUBS) {
+    if (T < a0 - .1 || T > b0 + .1) continue;
+    const a = win(T, a0, b0, .35, .35); if (a <= 0) continue;
+    const lines = subLines(s);
+    lines.forEach((ln, i) => {
+      let x = SUB.x; const y = SUB.y + (i - (lines.length - 1)) * SUB.lh;
+      ctx.font = `500 ${SUB.size}px ${SERIF}`; ctx.letterSpacing = '2px';
+      ln.forEach(c => { const w = ctx.measureText(c.ch).width + 2; text(c.ch, x, y, { size: SUB.size, weight: 500, color: c.hi ? ORANGE : CREAM, alpha: a, glow: 'rgba(0,0,0,.9)', blur: 12 }); x += w; });
+    });
+  }
+}
+
+// ======================================================================== 顶部分段进度条
+const SECTIONS = {{SECTIONS}};
+const TOTAL = {{TOTAL}};
+// 进度条放在 TikTok 顶部“关注 / 推荐”栏之下，避免被 App 的界面挡住
+const PB = { y: 336, h: 4, x0: 96, x1: 984, gap: 10 };
+function progress(T) {
+  const span = PB.x1 - PB.x0 - PB.gap * (SECTIONS.length - 1);
+  let x = PB.x0, cur = 0;
+  SECTIONS.forEach(([name, a, b], i) => {
+    const w = span * (b - a) / TOTAL, f = clamp((T - a) / (b - a)); if (T >= a) cur = i;
+    rr(x, PB.y, w, PB.h, 2, 'rgba(255,255,255,.16)');
+    if (f > 0) { ctx.save(); if (f < 1) { ctx.shadowColor = `rgba(${O_RGB},.9)`; ctx.shadowBlur = 10; } rr(x, PB.y, Math.max(PB.h, w * f), PB.h, 2, f < 1 ? ORANGE : 'rgba(236,230,218,.75)'); ctx.restore(); }
+    x += w + PB.gap;
+  });
+  text(`${String(cur + 1).padStart(2, '0')}  ${SECTIONS[cur][0]}`, PB.x0, PB.y - 32, { size: 28, weight: 500, color: CREAM, alpha: .85, ls: 4 });
+  text(`${String(cur + 1).padStart(2, '0')} / ${String(SECTIONS.length).padStart(2, '0')}`, PB.x1, PB.y - 32, { font: LAT, weight: 600, size: 30, color: DIM, align: 'right', ls: 2 });
+}
+
+// ======================================================================== 水印
+// 低透明度、缓慢漂移；画在场景层里，所以会跟着每个镜头一起淡入淡出。活动范围避开进度条和字幕。
+const WM = '@黑猫不说话';
+function watermark(T) {
+  const x = 540 + Math.sin(T * TAU / 47) * 210 + Math.sin(T * TAU / 83 + 1) * 50;
+  const y = 860 + Math.sin(T * TAU / 61 + .7) * 300;
+  text(WM, x, y, { font: SANS, weight: 500, size: 30, align: 'center', color: '#ffffff', alpha: .16 * sstep(0, 1.5, T), ls: 2 });
+}
+
+// ======================================================================== 帧
+const shotAt = T => { let s = SHOTS[0]; for (const S of SHOTS) if (T >= S.t0) s = S; return s; };
+function frame(T) {
+  T = clamp(T, 0, TOTAL - 1e-3);
+  const S = shotAt(T), lt = T - S.t0, d = S.t1 - S.t0;
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.letterSpacing = '0px'; ctx.setLineDash([]);
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  ctx.save();
+  const z = 1 + .025 * lt / d; ctx.translate(W / 2, H * .5); ctx.scale(z, z); ctx.translate(-W / 2, -H * .5);   // 缓慢推近
+  S.draw(lt, d, T);
+  watermark(T);
+  ctx.restore();
+  const fi = S.fi ?? .45, fo = S.fo ?? .45, dip = 1 - (fi > 0 ? sstep(0, fi, lt) : 1) * (1 - sstep(d - fo, d, lt));
+  if (dip > 0) { ctx.fillStyle = `rgba(0,0,0,${dip})`; ctx.fillRect(0, 0, W, H); }
+  post(T); subtitles(T); progress(T);
+}
+
+// ======================================================================== 字体、播放与导出接口
+let fontsReady = false;
+Promise.all([['900', SERIF], ['700', SERIF], ['500', SERIF], ['700', SANS], ['500', SANS], ['italic 500', LAT], ['italic 600', LAT], ['600', LAT]]
+  .map(([w, f]) => document.fonts.load(`${w} 40px ${f}`, '{{TITLE}} Aa')))
+  .then(() => document.fonts.ready).then(() => { fontsReady = true; frame(0); });
+window.__ready = () => fontsReady;
+window.__frame = (t, q = .95) => { frame(t); return cv.toDataURL('image/jpeg', q); };
+window.__duration = () => TOTAL;
+window.__cues = () => ({ total: TOTAL, cues: [], sections: SECTIONS.map(([name, t0, t1]) => ({ name, t0, t1, lines: [] })) });
+
+if (!EXPORT) {
+  const au = new Audio("../video2/bgm.m4a");
+  let playing = false, clock0 = 0, pausedAt = 0, useAudio = true;
+  const now = () => useAudio && !au.paused ? au.currentTime : playing ? (performance.now() - clock0) / 1000 : pausedAt;
+  function loop() { if (!playing) return; const T = now(); frame(T); if (T >= TOTAL) { playing = false; pausedAt = 0; au.pause(); return; } requestAnimationFrame(loop); }
+  function play() { playing = true; clock0 = performance.now() - pausedAt * 1000; au.currentTime = pausedAt; au.play().catch(() => { useAudio = false; }); requestAnimationFrame(loop); }
+  function pause() { pausedAt = now(); playing = false; au.pause(); }
+  document.getElementById('stage').onclick = () => playing ? pause() : play();
+  addEventListener('keydown', e => {
+    if (e.code === 'Space') { e.preventDefault(); playing ? pause() : play(); }
+    if (e.code === 'ArrowRight' || e.code === 'ArrowLeft') { const t = clamp(now() + (e.code === 'ArrowRight' ? 5 : -5), 0, TOTAL); pausedAt = t; clock0 = performance.now() - t * 1000; au.currentTime = t; if (!playing) frame(t); }
+  });
+} else document.getElementById('hint').remove();
+</script>
+</body>
+</html>

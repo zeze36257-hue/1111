@@ -1,0 +1,531 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>窝里横</title>
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>
+  :root { --bg: #000; }
+  html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; }
+  #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  canvas { height: 100vh; width: 56.25vh; max-width: 100vw; max-height: 177.78vw; background: #000; display: block; }
+  #hint { position: fixed; left: 0; right: 0; bottom: 16px; text-align: center; color: #888; font: 14px "Noto Sans SC", sans-serif; }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c" width="1080" height="1920"></canvas></div>
+<div id="hint">点击播放 / 暂停 · ← → 快退快进</div>
+<script>
+'use strict';
+// 黑猫不说话 · 心理学 No.6《为什么越亲近，越容易说狠话》。沿用系列风格：俯视与留白、数字叙事、节奏卡在背景音乐的段落上。
+// 每一帧都是时间 T 的纯函数：实时预览与逐帧导出（?export=1）画出的是同一帧。
+const W = 1080, H = 1920;
+const EXPORT = /[?&]export=1/.test(location.search);
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const PI = Math.PI, TAU = PI * 2;
+const clamp = (x, a = 0, b = 1) => x < a ? a : x > b ? b : x;
+const lerp = (a, b, t) => a + (b - a) * t;
+const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+const eout = t => 1 - Math.pow(1 - clamp(t), 3);
+const eio = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const win = (t, a, b, fi = .4, fo = .4) => sstep(a, a + fi, t) * (1 - sstep(b - fo, b, t));
+function mulberry(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+
+const SERIF = '"Noto Serif SC", serif', SANS = '"Noto Sans SC", sans-serif', LAT = '"Cormorant Garamond", serif';
+const ORANGE = '#f2a14a', TEAL = '#4fd6c4', CREAM = '#ece6da', DIM = '#8a93a3';
+const O_RGB = '242,161,74', T_RGB = '79,214,196';
+
+// 背景音乐的段落（秒）：前奏 0–10.5，安静 10.5–17.25，全编制 17.25 起，89.5 回落
+const DROP = 17.25, CALM = 89.5;
+
+// ======================================================================== 基础绘制
+function text(s, x, y, o = {}) {
+  ctx.save();
+  ctx.font = `${o.style || ''} ${o.weight || 500} ${o.size || 44}px ${o.font || SERIF}`;
+  ctx.textAlign = o.align || 'left'; ctx.textBaseline = o.base || 'middle';
+  ctx.globalAlpha *= o.alpha ?? 1; ctx.letterSpacing = (o.ls || 0) + 'px';
+  if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = o.blur ?? 20; }
+  ctx.fillStyle = o.color || CREAM; ctx.fillText(s, x, y);
+  ctx.restore();
+}
+function rr(x, y, w, h, r, fill, stroke, lw = 2) {
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+}
+function floor(c0 = '#161d29', c1 = '#07090d', cx = W / 2, cy = H * .45) {
+  const g = ctx.createRadialGradient(cx, cy, 60, cx, cy, H * .85);
+  g.addColorStop(0, c0); g.addColorStop(1, c1); ctx.fillStyle = g; ctx.fillRect(-W, -H, W * 3, H * 3);
+}
+function tiles(x0, y0, w, h, step, col = 'rgba(150,170,210,.05)') {
+  ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = 1.5;
+  for (let x = x0; x <= x0 + w + .1; x += step) { ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x, y0 + h); ctx.stroke(); }
+  for (let y = y0; y <= y0 + h + .1; y += step) { ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x0 + w, y); ctx.stroke(); }
+  ctx.restore();
+}
+// 从正上方看到的一圈光
+function pool(x, y, r, a, col = '255,222,170', edge = true) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+  g.addColorStop(0, `rgba(${col},${.34 * a})`); g.addColorStop(.7, `rgba(${col},${.16 * a})`); g.addColorStop(1, `rgba(${col},0)`);
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+  if (edge) { ctx.strokeStyle = `rgba(${col},${.12 * a})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, r * .78, 0, TAU); ctx.stroke(); }
+  ctx.restore();
+}
+// 俯视的人：肩膀 + 头顶。dir 是面朝方向（弧度，-PI/2 为朝上）
+function human(x, y, s, o = {}) {
+  const a = o.alpha ?? 1; if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a; ctx.translate(x, y); ctx.rotate((o.dir ?? -PI / 2) + PI / 2);
+  if (o.phone) {                                     // 手机的光照亮脸前
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    const g = ctx.createRadialGradient(0, -s * .9, 0, 0, -s * .9, s * 1.6);
+    g.addColorStop(0, `rgba(150,200,255,${.35 * o.phone})`); g.addColorStop(1, 'rgba(150,200,255,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, -s * .9, s * 1.6, 0, TAU); ctx.fill(); ctx.restore();
+  }
+  const body = o.body || '#2a303c';
+  ctx.fillStyle = body; ctx.beginPath(); ctx.ellipse(0, s * .32, s * 1.12, s * .6, 0, 0, TAU); ctx.fill();
+  const sh = ctx.createLinearGradient(-s, 0, s, 0); sh.addColorStop(0, 'rgba(255,255,255,.08)'); sh.addColorStop(1, 'rgba(0,0,0,.25)');
+  ctx.fillStyle = sh; ctx.beginPath(); ctx.ellipse(0, s * .32, s * 1.12, s * .6, 0, 0, TAU); ctx.fill();
+  if (o.phone) rr(-s * .22, -s * 1.25, s * .44, s * .62, s * .08, `rgba(200,230,255,${.9 * o.phone})`);
+  ctx.fillStyle = o.hair || '#0c0e13'; ctx.beginPath(); ctx.arc(0, 0, s * .52, 0, TAU); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,.12)'; ctx.lineWidth = s * .08; ctx.beginPath(); ctx.arc(0, 0, s * .44, PI * 1.1, PI * 1.6); ctx.stroke();
+  ctx.restore();
+  if (o.ring) {                                      // 主角 / 被标记的人：头顶一圈彩色光环
+    ctx.save(); ctx.globalAlpha *= a * (o.ringA ?? 1);
+    ctx.shadowColor = o.ring; ctx.shadowBlur = 16; ctx.strokeStyle = o.ring; ctx.lineWidth = Math.max(2.5, s * .1);
+    ctx.beginPath(); ctx.arc(x, y, s * .78, 0, TAU); ctx.stroke(); ctx.restore();
+  }
+}
+// 注释标签：从目标点引一条细线到文字，可带大号数字
+function callout(x, y, dx, dy, a, big, small, col = CREAM, o = {}) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a;
+  const k = eout(o.grow ?? 1);
+  ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.globalAlpha *= .8;
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + dx * k, y + dy * k); ctx.lineTo(x + dx * k + Math.sign(dx || 1) * 40 * k, y + dy * k); ctx.stroke();
+  ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y, 5, 0, TAU); ctx.fill();
+  ctx.restore();
+  const tx = x + dx + Math.sign(dx || 1) * 56, al = dx >= 0 ? 'left' : 'right';
+  ctx.save(); ctx.globalAlpha *= a * sstep(.5, 1, o.grow ?? 1);
+  ctx.font = `700 ${o.bigSize || 64}px ${SERIF}`; ctx.letterSpacing = '0px';
+  const bw = big ? ctx.measureText(big).width : 0;
+  if (big) text(big, tx, y + dy, { size: o.bigSize || 64, weight: 700, color: col, align: al });
+  if (small) text(small, dx >= 0 ? tx + bw + (big ? 14 : 0) : tx - bw - (big ? 14 : 0), y + dy + (big ? 6 : 0), { size: 34, weight: 500, color: o.smallCol || CREAM, align: al });
+  ctx.restore();
+}
+// 右上角的时间 / 年份标签（参考视频里的 2018、2020…）
+function stamp(s, a, sub) {
+  if (a <= 0) return;
+  text(s, W - 96, 412, { font: LAT, weight: 600, size: 54, color: CREAM, align: 'right', alpha: a * .9, ls: 4 });
+  if (sub) text(sub, W - 96, 460, { font: LAT, style: 'italic', weight: 500, size: 30, color: DIM, align: 'right', alpha: a });
+}
+const BOKEH = (() => { const r = mulberry(4); return Array.from({ length: 26 }, () => ({ x: r() * W, y: 300 + r() * 1300, r: 20 + r() * 50, p: r() * TAU, v: .2 + r() * .5 })); })();
+function bokeh(t, a) {
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  for (const b of BOKEH) {
+    const al = a * (.04 + .04 * Math.sin(t * b.v + b.p)), y = b.y - t * 8 * b.v;
+    const g = ctx.createRadialGradient(b.x, y, 0, b.x, y, b.r); g.addColorStop(0, `rgba(160,190,230,${al})`); g.addColorStop(1, 'rgba(160,190,230,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(b.x, y, b.r, 0, TAU); ctx.fill();
+  }
+  ctx.restore();
+}
+const GRAIN = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d'), im = g.createImageData(256, 256), r = mulberry(3);
+  for (let i = 0; i < im.data.length; i += 4) { const v = r() * 255; im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 255; }
+  g.putImageData(im, 0, 0); return c;
+})();
+function post(T) {
+  const v = ctx.createRadialGradient(W / 2, H * .46, H * .28, W / 2, H * .46, H * .8);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,.6)'); ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+  const f = Math.floor(T * 30), ox = (f * 97) % 256, oy = (f * 61) % 256;
+  ctx.save(); ctx.globalAlpha = .06; ctx.globalCompositeOperation = 'overlay';
+  ctx.fillStyle = ctx.createPattern(GRAIN, 'repeat'); ctx.translate(-ox, -oy); ctx.fillRect(0, 0, W + 256, H + 256); ctx.restore();
+}
+
+// ======================================================================== 共用场景元素
+function heartPath(x, y, s) {
+  ctx.beginPath(); ctx.moveTo(x, y + s * .35);
+  ctx.bezierCurveTo(x - s * .9, y - s * .25, x - s * .45, y - s * .85, x, y - s * .38);
+  ctx.bezierCurveTo(x + s * .45, y - s * .85, x + s * .9, y - s * .25, x, y + s * .35); ctx.closePath();
+}
+// 聊天气泡：side 'L' 是 TA（左），'R' 是你（右）
+function bubble(s, x, y, side, a, o = {}) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a;
+  ctx.font = `500 40px ${SANS}`; ctx.letterSpacing = '0px';
+  const w = ctx.measureText(s).width + 64, h = 86, bx = side === 'R' ? x - w : x, dy = (1 - eout(o.pop ?? 1)) * 20;
+  rr(bx, y - h / 2 + dy, w, h, 30, side === 'R' ? 'rgba(242,161,74,.92)' : 'rgba(46,54,70,.96)');
+  text(s, bx + 32, y + 2 + dy, { font: SANS, size: 40, color: side === 'R' ? '#21140a' : CREAM });
+  if (o.time) text(o.time, x, y + h / 2 + 26 + dy, { font: SANS, size: 24, color: DIM, align: side === 'R' ? 'right' : 'left' });
+  if (o.tag) text(o.tag, side === 'R' ? bx - 18 : bx + w + 18, y + h / 2 - 12 + dy, { font: SANS, size: 26, color: o.tagCol || TEAL, align: side === 'R' ? 'right' : 'left', alpha: o.tagA ?? 1 });
+  ctx.restore();
+}
+function avatar(x, y, r, ring = TEAL) {
+  ctx.save(); ctx.fillStyle = '#2b3242'; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+  ctx.fillStyle = '#c9d0de'; ctx.beginPath(); ctx.arc(x, y - r * .18, r * .34, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(x, y + r * .62, r * .62, r * .42, 0, PI, TAU); ctx.fill();
+  ctx.shadowColor = ring; ctx.shadowBlur = 12; ctx.strokeStyle = ring; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x, y, r + 5, 0, TAU); ctx.stroke();
+  ctx.restore();
+}
+function chatHeader(a, status = '') {
+  ctx.save(); ctx.globalAlpha *= a;
+  avatar(160, 500, 34);
+  text('TA', 220, 488, { font: SANS, weight: 700, size: 38, color: CREAM });
+  if (status) text(status, 220, 528, { font: SANS, size: 24, color: DIM });
+  ctx.fillStyle = 'rgba(255,255,255,.07)'; ctx.fillRect(90, 572, 900, 2);
+  ctx.restore();
+}
+const pad2 = n => String(Math.floor(n)).padStart(2, '0');
+
+// 系列标记：黑猫不说话 · 心理学 No.6
+const SERIES = '黑猫不说话 · 心理学 No.6';
+function seriesTag(y, a) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a;
+  ctx.font = `500 30px ${SERIF}`; ctx.letterSpacing = '6px'; const w = ctx.measureText(SERIES).width;
+  text(SERIES, W / 2, y, { size: 30, weight: 500, align: 'center', color: ORANGE, ls: 6 });
+  ctx.strokeStyle = `rgba(${O_RGB},.5)`; ctx.lineWidth = 1.5;
+  for (const k of [-1, 1]) { ctx.beginPath(); ctx.moveTo(W / 2 + k * (w / 2 + 24), y); ctx.lineTo(W / 2 + k * (w / 2 + 84), y); ctx.stroke(); }
+  ctx.restore();
+}
+
+
+
+// ======================================================================== 镜头
+const SHOTS = [];
+function shot(o) { SHOTS.push(o); return o; }
+const RED = '#ff6b6b', R_RGB = '255,107,107';
+// 一个词标签（对外人 / 对家人）
+function tag(s, x, y, col, rgb, a, o = {}) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a; ctx.font = `700 ${o.size || 36}px ${SANS}`; ctx.letterSpacing = '0px';
+  const w = ctx.measureText(s).width + 48, h = (o.size || 36) + 34, dy = (1 - eout(a)) * 16;
+  rr(x - w / 2, y - h / 2 + dy, w, h, h / 2, `rgba(${rgb},.12)`, `rgba(${rgb},.6)`, 2);
+  text(s, x, y + 2 + dy, { font: SANS, weight: 700, size: o.size || 36, align: 'center', color: col });
+  ctx.restore();
+}
+const OUT_WORDS = ['谢谢', '不好意思', '辛苦了', '没关系'], HOME_WORDS = ['你烦不烦', '知道了知道了', '别管我', '说了你也不懂'];
+function twoColumns(lt, T, o = {}) {
+  text('对外人', 290, 640, { font: SANS, weight: 700, size: 34, align: 'center', color: TEAL });
+  text('对家人', 790, 640, { font: SANS, weight: 700, size: 34, align: 'center', color: o.warm ? ORANGE : RED });
+  ctx.fillStyle = 'rgba(255,255,255,.08)'; ctx.fillRect(538, 620, 4, 560);
+  OUT_WORDS.forEach((s, i) => tag(s, 290, 740 + i * 110, TEAL, T_RGB, o.out ? o.out(i) : 1));
+  (o.homeWords || HOME_WORDS).forEach((s, i) => tag(s, 790, 740 + i * 110, o.warm ? ORANGE : RED, o.warm ? O_RGB : R_RGB, o.home ? o.home(i) : 1));
+}
+
+// ---------------------------------------------------------------- 0–10.5 钩子：对外客客气气，对家人一句“你烦不烦”（第一帧就是封面）
+shot({
+  t0: 0, t1: 10.5, fi: 0,
+  draw(lt, d, T) {
+    floor('#131a26', '#05070a');
+    text('对外卖小哥说「辛苦了」，', W / 2, 430, { size: 56, weight: 700, align: 'center', ls: 3 });
+    text('对妈妈说「你烦不烦」。', W / 2, 520, { size: 66, weight: 900, align: 'center', color: RED, ls: 4, glow: `rgba(${R_RGB},.45)`, blur: 26 });
+    twoColumns(lt, T, { out: i => sstep(.4 + i * .5, .7 + i * .5, lt), home: i => sstep(2.6 + i * .6, 2.9 + i * .6, lt) });
+  },
+});
+// ---------------------------------------------------------------- 10.5–17.25 标题：窝里横
+shot({
+  t0: 10.5, t1: DROP,
+  draw(lt, d, T) {
+    floor('#121925', '#05070a');
+    seriesTag(500, sstep(.6, 1.6, lt));
+    text('窝里横', W / 2, 640, { size: 140, weight: 900, align: 'center', ls: 30, alpha: sstep(1, 2.2, lt), glow: 'rgba(255,220,170,.25)', blur: 30 });
+    text('为什么越亲近，越容易说狠话', W / 2, 770, { size: 40, weight: 500, align: 'center', ls: 8, color: '#a7b0bf', alpha: sstep(2.2, 3.3, lt) });
+    // 一扇门：门外光环是青色、平静；进了门，变成带刺的红色
+    const fa = sstep(1.6, 2.4, lt), x = lerp(240, 840, eio((lt - 2.2) / 3)), inside = x > 540;
+    ctx.save(); ctx.globalAlpha = fa; ctx.strokeStyle = 'rgba(236,230,218,.5)'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(540, 930); ctx.lineTo(540, 990); ctx.moveTo(540, 1070); ctx.lineTo(540, 1130); ctx.stroke(); ctx.restore();
+    text('外面', 300, 900, { font: SANS, size: 28, align: 'center', color: DIM, alpha: fa }); text('家里', 780, 900, { font: SANS, size: 28, align: 'center', color: DIM, alpha: fa });
+    pool(x, 1030, 130, fa * .7, inside ? '255,140,140' : '150,230,220');
+    human(x, 1030, 30, { ring: inside ? RED : TEAL, alpha: fa, dir: 0 });
+    if (inside) for (let k = 0; k < 10; k++) {
+      const a = k / 10 * TAU + lt, r1 = 52, r2 = 66 + 6 * Math.sin(lt * 8 + k);
+      ctx.save(); ctx.globalAlpha = fa * sstep(540, 600, x); ctx.strokeStyle = RED; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(x + Math.cos(a) * r1, 1030 + Math.sin(a) * r1); ctx.lineTo(x + Math.cos(a) * r2, 1030 + Math.sin(a) * r2); ctx.stroke(); ctx.restore();
+    }
+  },
+});
+
+// ---------------------------------------------------------------- 17.25–31 原因一：情绪溢出
+const EVENTS = [['被老板说了一句', 18.4], ['地铁挤了一小时', 19.6], ['消息没人回', 20.8], ['作业还没写完', 22]];
+function heading(n, s, a) {
+  if (a <= 0) return;
+  text(n, 96, 470, { weight: 900, size: 56, color: ORANGE, alpha: a, glow: `rgba(${O_RGB},.4)`, blur: 20 });
+  text(s, 170, 470, { weight: 700, size: 50, color: CREAM, alpha: a });
+}
+shot({
+  t0: DROP, t1: 31, fi: .12,
+  draw(lt, d, T) {
+    const t = DROP + lt;
+    floor('#131a26', '#05070a');
+    heading('①', '情绪溢出', sstep(17.4, 18, t));
+    const level = clamp(EVENTS.filter(([, t0]) => t >= t0 + .2).length * .23 + (t > 23 ? .04 : 0));   // 一桶情绪，越装越满
+    const fill = lerp(0, level, 1), tx = 760, ty0 = 620, th = 520, tw = 200;
+    rr(tx - tw / 2, ty0, tw, th, 18, 'rgba(255,255,255,.04)', 'rgba(236,230,218,.35)', 3);
+    const spill = sstep(26.4, 27.2, t);
+    const lv = Math.min(1, fill + spill * .1), lh = th * lv;
+    ctx.save(); ctx.beginPath(); ctx.roundRect(tx - tw / 2, ty0, tw, th, 18); ctx.clip();
+    const g = ctx.createLinearGradient(0, ty0 + th - lh, 0, ty0 + th); g.addColorStop(0, `rgba(${R_RGB},.85)`); g.addColorStop(1, `rgba(${O_RGB},.6)`);
+    ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(tx - tw / 2, ty0 + th);
+    for (let x = -tw / 2; x <= tw / 2; x += 6) ctx.lineTo(tx + x, ty0 + th - lh + Math.sin(x * .06 + t * 3) * 6);
+    ctx.lineTo(tx + tw / 2, ty0 + th); ctx.closePath(); ctx.fill(); ctx.restore();
+    text('情绪', tx, ty0 - 34, { font: SANS, size: 28, align: 'center', color: DIM });
+    if (spill > 0) for (let k = 0; k < 14; k++) {                   // 溢出来，洒到家人身上
+      const p = clamp((t - 26.4 - k * .06) / 1.2), x = tx - 60 + p * -260 + k * 6, y = ty0 + 10 + p * p * 420 + Math.sin(k) * 20;
+      ctx.fillStyle = `rgba(${R_RGB},${.8 * (1 - p * .6)})`; ctx.beginPath(); ctx.arc(x, y, 7 + k % 3 * 2, 0, TAU); ctx.fill();
+    }
+    EVENTS.forEach(([s, t0], i) => {
+      const a = sstep(t0, t0 + .3, t) * (1 - sstep(25.6, 26.2, t)), y = 660 + i * 100;
+      tag('+ ' + s, 330, y, CREAM, '236,230,218', a, { size: 30 });
+    });
+    if (t > 23) text('（在外面，都憋着）', 330, 1080, { size: 32, weight: 500, align: 'center', color: DIM, alpha: sstep(23, 23.4, t) * (1 - sstep(25.6, 26.2, t)) });
+    const ha = sstep(25.8, 26.4, t);
+    human(400, 1080, 30, { ring: TEAL, alpha: ha, dir: 0 });
+    bubble('吃饭了吗？', 120, 960, 'L', ha, { pop: (t - 25.8) / .35 });
+    text('你烦不烦！', 640, 1200, { weight: 900, size: 44, align: 'center', color: RED, alpha: sstep(27, 27.3, t), glow: `rgba(${R_RGB},.5)`, blur: 20 });
+    stamp('1989', sstep(21.6, 22.2, t), 'Repetti · 空中交通管制员');
+  },
+});
+
+// ---------------------------------------------------------------- 31–43 原因二：越亲近，越不客气
+const RINGS = [['家人', 110, 0], ['朋友', 200, 3], ['同事', 290, 6], ['陌生人', 380, 10]];
+shot({
+  t0: 31, t1: 43,
+  draw(lt, d, T) {
+    const t = 31 + lt, cx = 540, cy = 930;
+    floor('#131a26', '#05070a');
+    heading('②', '越近，越不客气', sstep(31.2, 31.8, t));
+    RINGS.forEach(([lab, r, n], i) => {
+      const a = sstep(31.6 + i * .3, 32 + i * .3, t);
+      ctx.save(); ctx.globalAlpha = a; ctx.strokeStyle = `rgba(236,230,218,${.12 + i * .05})`; ctx.lineWidth = 2; ctx.setLineDash([5, 9]);
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.stroke(); ctx.restore();
+      text(lab, cx + r - 8, cy - 18, { font: SANS, size: 26, align: 'right', color: DIM, alpha: a });
+      for (let k = 0; k < n; k++) {                                     // 每一圈上的“客气话”：离得越远越多
+        const ang = -PI / 2 + (k + .5) / Math.max(1, n) * TAU * .9 + i, pa = sstep(35.6 + i * .4 + k * .03, 36 + i * .4 + k * .03, t);
+        const x = cx + Math.cos(ang) * r, y = cy + Math.sin(ang) * r;
+        ctx.save(); ctx.globalAlpha = pa; ctx.fillStyle = TEAL; ctx.shadowColor = TEAL; ctx.shadowBlur = 10; ctx.beginPath(); ctx.arc(x, y, 7, 0, TAU); ctx.fill(); ctx.restore();
+      }
+    });
+    pool(cx, cy, 120, .8); human(cx, cy, 30, { ring: ORANGE, dir: -PI / 2 });
+    text('●  = 一句「请」「谢谢」「不好意思」', 120, 1380 - 140, { font: SANS, size: 26, color: TEAL, alpha: sstep(36, 36.5, t) });
+    const zero = sstep(39.8, 40.3, t);
+    if (zero > 0) callout(cx + 70, cy - 70, 150, -150, zero, '0', '句', RED, { grow: (t - 39.8) / .5, bigSize: 72 });
+    stamp('1987', sstep(35.5, 36.1, t), 'Brown & Levinson');
+  },
+});
+
+// ---------------------------------------------------------------- 43–54 原因三：你默认，家人不会离开
+shot({
+  t0: 43, t1: 54,
+  draw(lt, d, T) {
+    const t = 43 + lt, yx = 300, yy = 920;
+    floor('#131a26', '#05070a');
+    heading('③', '安全基地', sstep(43.2, 43.8, t));
+    // 和外人之间：一根细线，一碰就断；和家人之间：一根粗绳，挨了骂也不断——但会磨损
+    const ox = 820, oy = 700, fx = 820, fy = 1140;
+    const snap = sstep(45, 45.3, t);
+    ctx.save(); ctx.globalAlpha = sstep(43.6, 44.2, t); ctx.strokeStyle = 'rgba(79,214,196,.6)'; ctx.lineWidth = 2; ctx.setLineDash([4, 8]);
+    if (snap < 1) { ctx.beginPath(); ctx.moveTo(yx, yy); ctx.lineTo(ox, oy); ctx.stroke(); }
+    else { ctx.beginPath(); ctx.moveTo(yx, yy); ctx.lineTo(lerp(yx, ox, .4), lerp(yy, oy, .4) + 30); ctx.moveTo(ox, oy); ctx.lineTo(lerp(yx, ox, .62), lerp(yy, oy, .62) + 30); ctx.stroke(); }
+    ctx.restore();
+    text('外人：一句话就断', ox, oy - 80, { font: SANS, size: 28, align: 'center', color: TEAL, alpha: sstep(44, 44.5, t) });
+    const fray = sstep(48, 52, t);
+    for (let k = 0; k < 9; k++) {                                       // 家人之间的粗绳，一股一股地磨断
+      const broken = k / 9 < fray * .7, off = (k - 4) * 3.5;
+      ctx.save(); ctx.globalAlpha = sstep(43.8, 44.4, t) * (broken ? .25 : .9); ctx.strokeStyle = broken ? 'rgba(255,107,107,.8)' : ORANGE; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(yx, yy + off); ctx.quadraticCurveTo((yx + fx) / 2, (yy + fy) / 2 + 60 + off, fx, fy + off); ctx.stroke(); ctx.restore();
+    }
+    text('家人：骂不走——但会磨损', fx, fy + 80, { font: SANS, size: 28, align: 'center', color: ORANGE, alpha: sstep(44.2, 44.7, t) });
+    ['你烦不烦', '别管我', '说了你也不懂'].forEach((s, i) => {
+      const t0 = 48 + i * 1.2, p = clamp((t - t0) / .8);
+      if (p <= 0 || p >= 1) return;
+      text(s, lerp(yx + 60, fx - 80, p), lerp(yy, fy, p) + 40 - Math.sin(p * PI) * 80, { weight: 900, size: 34, align: 'center', color: RED, alpha: Math.sin(p * PI) });
+    });
+    pool(yx, yy, 120, .8); human(yx, yy, 30, { ring: ORANGE, dir: 0 });
+    human(ox, oy, 28, { ring: TEAL, dir: PI, alpha: 1 - .5 * snap }); human(fx, fy, 28, { ring: ORANGE, dir: PI });
+    stamp('Bowlby', sstep(47.6, 48.2, t), 'Secure Base');
+  },
+});
+
+// ---------------------------------------------------------------- 54–64 戈特曼的 5:1，以及最伤人的“轻蔑”
+shot({
+  t0: 54, t1: 64,
+  draw(lt, d, T) {
+    const t = 54 + lt;
+    floor('#141a26', '#05070a');
+    const cx = 540, by = 980, tilt = lerp(.18, 0, eout((t - 55.4) / 1.6));            // 一架天平：1 句负面，要 5 句正面才压得平
+    ctx.save(); ctx.translate(cx, by); ctx.rotate(-tilt);
+    ctx.strokeStyle = CREAM; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(-340, 0); ctx.lineTo(340, 0); ctx.stroke();
+    for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(s * 300, 0); ctx.lineTo(s * 300, 110); ctx.stroke(); ctx.beginPath(); ctx.ellipse(s * 300, 120, 120, 22, 0, 0, TAU); ctx.stroke(); }
+    ctx.save(); ctx.translate(300, 98); ctx.rotate(tilt); ctx.fillStyle = RED; ctx.shadowColor = RED; ctx.shadowBlur = 16; ctx.beginPath(); ctx.arc(0, 0, 22, 0, TAU); ctx.fill(); ctx.restore();
+    for (let k = 0; k < 5; k++) { const a = sstep(55 + k * .3, 55.3 + k * .3, t); ctx.save(); ctx.translate(-380 + k * 40, 98 - (k % 2) * 30); ctx.rotate(tilt); ctx.globalAlpha = a; ctx.fillStyle = TEAL; ctx.shadowColor = TEAL; ctx.shadowBlur = 14; ctx.beginPath(); ctx.arc(0, 0, 18, 0, TAU); ctx.fill(); ctx.restore(); }
+    ctx.restore();
+    ctx.fillStyle = CREAM; ctx.beginPath(); ctx.moveTo(cx - 30, by + 160); ctx.lineTo(cx + 30, by + 160); ctx.lineTo(cx, by); ctx.closePath(); ctx.fill();
+    text('5', cx - 300, 740, { weight: 900, size: 120, align: 'center', color: TEAL, alpha: sstep(56.4, 57, t), glow: `rgba(${T_RGB},.5)`, blur: 24 });
+    text(':', cx, 740, { weight: 900, size: 100, align: 'center', color: CREAM, alpha: sstep(56.6, 57.2, t) });
+    text('1', cx + 300, 740, { weight: 900, size: 120, align: 'center', color: RED, alpha: sstep(56.8, 57.4, t), glow: `rgba(${R_RGB},.5)`, blur: 24 });
+    text('正面', cx - 300, 820, { font: SANS, size: 28, align: 'center', color: DIM, alpha: sstep(57, 57.5, t) }); text('负面', cx + 300, 820, { font: SANS, size: 28, align: 'center', color: DIM, alpha: sstep(57, 57.5, t) });
+    const ca = sstep(59, 59.5, t);                                       // 轻蔑
+    if (ca > 0) {
+      rr(160, 1220 - 70, 760, 110, 55, `rgba(${R_RGB},${.12 * ca})`, `rgba(${R_RGB},${.6 * ca})`, 2);
+      text('最伤人的：轻蔑', 540, 1205 - 70 + 28, { weight: 900, size: 44, align: 'center', color: RED, alpha: ca });
+    }
+    stamp('1992', sstep(54.3, 55, t), 'Gottman & Levenson');
+  },
+});
+
+// ---------------------------------------------------------------- 64–74 一个办法：心跳过 100，先停 20 分钟
+shot({
+  t0: 64, t1: 74,
+  draw(lt, d, T) {
+    const t = 64 + lt;
+    floor('#141a26', '#05070a');
+    const bpm = t < 68.9 ? lerp(72, 118, eio((t - 64.4) / 3.2)) : lerp(118, 74, eio((t - 69.6) / 3.6));
+    const flooded = bpm > 100;
+    ctx.save(); ctx.lineWidth = 4; ctx.strokeStyle = flooded ? RED : TEAL; ctx.shadowColor = ctx.strokeStyle; ctx.shadowBlur = 14; ctx.beginPath();   // 心电图
+    for (let x = 100; x <= 980; x += 4) {
+      const ph = (x / 880 * 6 + t * bpm / 60) % 1, spike = ph < .06 ? Math.sin(ph / .06 * PI) * (ph < .03 ? -1 : 2.4) : 0;
+      const y = 820 - spike * 70 + Math.sin(x * .05) * 3;
+      x === 100 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke(); ctx.restore();
+    text(`${Math.round(bpm)}`, 540, 1010, { weight: 900, size: 150, align: 'center', color: flooded ? RED : TEAL, glow: flooded ? `rgba(${R_RGB},.5)` : `rgba(${T_RGB},.4)`, blur: 30 });
+    text('次 / 分钟', 540, 1110, { font: SANS, size: 30, align: 'center', color: DIM });
+    text('情绪淹没', 540, 640, { weight: 900, size: 52, align: 'center', color: RED, alpha: flooded && t < 69.4 ? sstep(66.3, 66.7, t) : 0, ls: 8 });
+    const ta = sstep(69, 69.5, t), left = 20 * 60 * (1 - eio((t - 69.6) / 3.8));
+    if (ta > 0) {
+      rr(340, 600, 400, 90, 45, `rgba(${T_RGB},${.12 * ta})`, `rgba(${T_RGB},${.6 * ta})`, 2);
+      text(`暂停 ${pad2(left / 60)}:${pad2(left % 60)}`, 540, 646, { weight: 700, size: 44, align: 'center', color: TEAL, alpha: ta });
+    }
+    stamp('Gottman', sstep(64.4, 65, t), 'Flooding · 情绪淹没');
+  },
+});
+// ---------------------------------------------------------------- 74–81 结尾：今天，对家人说一句谢谢
+shot({
+  t0: 74, t1: 81, fo: 1,
+  draw(lt, d, T) {
+    floor('#1a1410', '#050403');
+    text('今天，', W / 2, 430, { size: 56, weight: 700, align: 'center', alpha: sstep(.1, .7, lt) });
+    text('对家人说一句「谢谢」吧。', W / 2, 520, { size: 64, weight: 900, align: 'center', color: ORANGE, alpha: sstep(.5, 1.2, lt), glow: `rgba(${O_RGB},.45)`, blur: 26 });
+    twoColumns(lt, T, { warm: true, homeWords: ['谢谢', '辛苦了', '今天怎么样？', '我回来了'], home: i => sstep(1.2 + i * .45, 1.5 + i * .45, lt) });
+  },
+});
+
+// ======================================================================== 字幕（左下角）
+// [起, 止, 文本]；「」里的字用橙色
+const SUBS = [
+  [.3, 4.8, '为什么我们对最亲近的人，最没耐心？'], [5.1, 10.2, '这一期：三个原因，一个办法。'],
+  [10.8, 16.8, '网上有个词，叫「窝里横」。'],
+  [17.5, 21.4, '原因一：情绪溢出。'],
+  [21.7, 26.2, '心理学家 Repetti 研究空中交通管制员：工作越忙的那天，回家越沉默。'],
+  [26.5, 30.8, '后来还发现：在单位受了气，回家对孩子更容易发火。'],
+  [31.3, 35.2, '原因二：越亲近，越不客气。'],
+  [35.5, 39.4, '礼貌理论认为：关系越远，人越会用客气话。'],
+  [39.7, 42.8, '对家人，我们连「请」和「谢谢」都省了。'],
+  [43.3, 47.4, '原因三：你默认，家人不会离开。'],
+  [47.7, 53.6, '家是「安全基地」：在最安全的地方，我们卸下防备，也卸下了分寸。'],
+  [54.3, 58.6, '戈特曼研究吵架的夫妻：关系稳定的，每 1 句负面话，约有 5 句正面话。'],
+  [58.9, 63.6, '最伤人的，是轻蔑：翻白眼、冷笑、「你怎么这么笨」。'],
+  [64.3, 68.6, '一个办法：心跳超过 100，人就很难好好说话了。'],
+  [68.9, 73.6, '先停下来，至少 20 分钟，等心跳慢下来，再回来说。'],
+  [74.4, 79.4, '评论区：你最后悔对家人说过的一句话是？'],
+];
+
+const SUB = { x: 96, y: 1420, size: 46, max: 880, lh: 66 };
+function subLines(s) {
+  const runs = []; let hi = false;
+  for (const ch of s) { if (ch === '「') { hi = true; continue; } if (ch === '」') { hi = false; continue; } runs.push({ ch, hi }); }
+  ctx.font = `500 ${SUB.size}px ${SERIF}`; ctx.letterSpacing = '2px';
+  const width = cs => cs.reduce((w, c) => w + ctx.measureText(c.ch).width + 2, 0);
+  if (width(runs) <= SUB.max) return [runs];
+  let best = Math.floor(runs.length / 2), bd = 1e9;
+  runs.forEach((c, i) => { if ('，、：；'.includes(c.ch) && Math.abs(i - runs.length / 2) < bd) { bd = Math.abs(i - runs.length / 2); best = i + 1; } });
+  return [runs.slice(0, best), runs.slice(best)];
+}
+function subtitles(T) {
+  const g = ctx.createLinearGradient(0, 1240, 0, 1600); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(.45, 'rgba(0,0,0,.5)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 1240, W, 360);
+  for (const [a0, b0, s] of SUBS) {
+    if (T < a0 - .1 || T > b0 + .1) continue;
+    const a = win(T, a0, b0, .35, .35); if (a <= 0) continue;
+    const lines = subLines(s);
+    lines.forEach((ln, i) => {
+      let x = SUB.x; const y = SUB.y + (i - (lines.length - 1)) * SUB.lh;
+      ctx.font = `500 ${SUB.size}px ${SERIF}`; ctx.letterSpacing = '2px';
+      ln.forEach(c => { const w = ctx.measureText(c.ch).width + 2; text(c.ch, x, y, { size: SUB.size, weight: 500, color: c.hi ? ORANGE : CREAM, alpha: a, glow: 'rgba(0,0,0,.9)', blur: 12 }); x += w; });
+    });
+  }
+}
+
+// ======================================================================== 顶部分段进度条
+const SECTIONS = [['钩子', 0, DROP], ['情绪溢出', DROP, 31], ['越近越不客气', 31, 43], ['安全基地', 43, 54], ['5:1', 54, 64], ['20 分钟', 64, 74], ['结尾', 74, 81]];
+const TOTAL = 81;
+// 进度条放在 TikTok 顶部“关注 / 推荐”栏之下，避免被 App 的界面挡住
+const PB = { y: 336, h: 4, x0: 96, x1: 984, gap: 10 };
+function progress(T) {
+  const span = PB.x1 - PB.x0 - PB.gap * (SECTIONS.length - 1);
+  let x = PB.x0, cur = 0;
+  SECTIONS.forEach(([name, a, b], i) => {
+    const w = span * (b - a) / TOTAL, f = clamp((T - a) / (b - a)); if (T >= a) cur = i;
+    rr(x, PB.y, w, PB.h, 2, 'rgba(255,255,255,.16)');
+    if (f > 0) { ctx.save(); if (f < 1) { ctx.shadowColor = `rgba(${O_RGB},.9)`; ctx.shadowBlur = 10; } rr(x, PB.y, Math.max(PB.h, w * f), PB.h, 2, f < 1 ? ORANGE : 'rgba(236,230,218,.75)'); ctx.restore(); }
+    x += w + PB.gap;
+  });
+  text(`${String(cur + 1).padStart(2, '0')}  ${SECTIONS[cur][0]}`, PB.x0, PB.y - 32, { size: 28, weight: 500, color: CREAM, alpha: .85, ls: 4 });
+  text(`${String(cur + 1).padStart(2, '0')} / ${String(SECTIONS.length).padStart(2, '0')}`, PB.x1, PB.y - 32, { font: LAT, weight: 600, size: 30, color: DIM, align: 'right', ls: 2 });
+}
+
+// ======================================================================== 水印
+// 低透明度、缓慢漂移；画在场景层里，所以会跟着每个镜头一起淡入淡出。活动范围避开进度条和字幕。
+const WM = '@黑猫不说话';
+function watermark(T) {
+  const x = 540 + Math.sin(T * TAU / 47) * 210 + Math.sin(T * TAU / 83 + 1) * 50;
+  const y = 860 + Math.sin(T * TAU / 61 + .7) * 300;
+  text(WM, x, y, { font: SANS, weight: 500, size: 30, align: 'center', color: '#ffffff', alpha: .16 * sstep(0, 1.5, T), ls: 2 });
+}
+
+// ======================================================================== 帧
+const shotAt = T => { let s = SHOTS[0]; for (const S of SHOTS) if (T >= S.t0) s = S; return s; };
+function frame(T) {
+  T = clamp(T, 0, TOTAL - 1e-3);
+  const S = shotAt(T), lt = T - S.t0, d = S.t1 - S.t0;
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.letterSpacing = '0px'; ctx.setLineDash([]);
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  ctx.save();
+  const z = 1 + .025 * lt / d; ctx.translate(W / 2, H * .5); ctx.scale(z, z); ctx.translate(-W / 2, -H * .5);   // 缓慢推近
+  S.draw(lt, d, T);
+  watermark(T);
+  ctx.restore();
+  const fi = S.fi ?? .45, fo = S.fo ?? .45, dip = 1 - (fi > 0 ? sstep(0, fi, lt) : 1) * (1 - sstep(d - fo, d, lt));
+  if (dip > 0) { ctx.fillStyle = `rgba(0,0,0,${dip})`; ctx.fillRect(0, 0, W, H); }
+  post(T); subtitles(T); progress(T);
+}
+
+// ======================================================================== 字体、播放与导出接口
+let fontsReady = false;
+Promise.all([['900', SERIF], ['700', SERIF], ['500', SERIF], ['700', SANS], ['500', SANS], ['italic 500', LAT], ['italic 600', LAT], ['600', LAT]]
+  .map(([w, f]) => document.fonts.load(`${w} 40px ${f}`, '窝里横 Aa')))
+  .then(() => document.fonts.ready).then(() => { fontsReady = true; frame(0); });
+window.__ready = () => fontsReady;
+window.__frame = (t, q = .95) => { frame(t); return cv.toDataURL('image/jpeg', q); };
+window.__duration = () => TOTAL;
+window.__cues = () => ({ total: TOTAL, cues: [], sections: SECTIONS.map(([name, t0, t1]) => ({ name, t0, t1, lines: [] })) });
+
+if (!EXPORT) {
+  const au = new Audio("../video2/bgm.m4a");
+  let playing = false, clock0 = 0, pausedAt = 0, useAudio = true;
+  const now = () => useAudio && !au.paused ? au.currentTime : playing ? (performance.now() - clock0) / 1000 : pausedAt;
+  function loop() { if (!playing) return; const T = now(); frame(T); if (T >= TOTAL) { playing = false; pausedAt = 0; au.pause(); return; } requestAnimationFrame(loop); }
+  function play() { playing = true; clock0 = performance.now() - pausedAt * 1000; au.currentTime = pausedAt; au.play().catch(() => { useAudio = false; }); requestAnimationFrame(loop); }
+  function pause() { pausedAt = now(); playing = false; au.pause(); }
+  document.getElementById('stage').onclick = () => playing ? pause() : play();
+  addEventListener('keydown', e => {
+    if (e.code === 'Space') { e.preventDefault(); playing ? pause() : play(); }
+    if (e.code === 'ArrowRight' || e.code === 'ArrowLeft') { const t = clamp(now() + (e.code === 'ArrowRight' ? 5 : -5), 0, TOTAL); pausedAt = t; clock0 = performance.now() - t * 1000; au.currentTime = t; if (!playing) frame(t); }
+  });
+} else document.getElementById('hint').remove();
+</script>
+</body>
+</html>
