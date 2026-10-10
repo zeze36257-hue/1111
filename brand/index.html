@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>黑猫不说话</title>
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>
+  :root { --bg: #000; }
+  html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; }
+  #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  canvas { height: 100vh; width: 56.25vh; max-width: 100vw; max-height: 177.78vw; background: #000; display: block; }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c" width="1080" height="1920"></canvas></div>
+<script>
+'use strict';
+// 黑猫不说话 · 片头（1.8 秒）：黑暗里睁开一双异色瞳（橙 / 青），轮廓光勾出一只坐着的黑猫，名字出现，眨一下眼，切进正片。
+// ?avatar=1 时只画猫、不画文字，用来导出头像；?outro=1 时是片尾（2.5 秒）：猫坐在中央，关注 + 下期预告，最后在黑暗里闭上眼，
+// 和片头“在黑暗里睁眼”首尾相接，TikTok 自动重播时无缝衔接。每一帧都是时间 T 的纯函数。
+const AVATAR = /[?&]avatar=1/.test(location.search), OUTRO = /[?&]outro=1/.test(location.search);
+const W = 1080, H = 1920, DUR = OUTRO ? 2.5 : 1.8;
+// 每期更新：片尾的下期预告（改完重新运行 fetch_fonts.py，字体子集才会包含新字）
+const NEXT = '下一期 · No.9《21 天，真的能养成习惯吗？》';
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const PI = Math.PI, TAU = PI * 2;
+const clamp = (x, a = 0, b = 1) => x < a ? a : x > b ? b : x;
+const lerp = (a, b, t) => a + (b - a) * t;
+const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+const eout = t => 1 - Math.pow(1 - clamp(t), 3);
+const SERIF = '"Noto Serif SC", serif';
+const ORANGE = '#f2a14a', TEAL = '#4fd6c4', CREAM = '#ece6da', DIM = '#8a93a3';
+const O_RGB = '242,161,74', T_RGB = '79,214,196';
+
+function text(s, x, y, o = {}) {
+  ctx.save();
+  ctx.font = `${o.weight || 500} ${o.size || 44}px ${o.font || SERIF}`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.globalAlpha *= o.alpha ?? 1; ctx.letterSpacing = (o.ls || 0) + 'px';
+  if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = o.blur ?? 20; }
+  ctx.fillStyle = o.color || CREAM; ctx.fillText(s, x, y);
+  ctx.restore();
+}
+
+// 坐着的黑猫（正面），局部坐标：原点在胸口，身高约 540
+const CAT = { x: 540, y: 880, s: 1 };
+function catPath(sway) {
+  // 头、两只耳朵、身体分开成几个形状，分别填充，重叠处才不会留下缝
+  const head = new Path2D(); head.ellipse(0, -150, 108, 94, 0, 0, TAU);
+  const earL = new Path2D(); earL.moveTo(-100, -190); earL.lineTo(-84, -292); earL.lineTo(-30, -232); earL.closePath();
+  const earR = new Path2D(); earR.moveTo(100, -190); earR.lineTo(84, -292); earR.lineTo(30, -232); earR.closePath();
+  const p = new Path2D();
+  p.moveTo(-62, -80);                                                         // 身体
+  p.bezierCurveTo(-120, -20, -168, 110, -150, 210);
+  p.quadraticCurveTo(-140, 248, -96, 250); p.lineTo(96, 250);
+  p.quadraticCurveTo(140, 248, 150, 210);
+  p.bezierCurveTo(168, 110, 120, -20, 62, -80); p.closePath();
+  const tail = new Path2D();                                                  // 尾巴绕到身前
+  tail.moveTo(120, 236); tail.bezierCurveTo(220, 250, 262 + sway * 10, 170, 238 + sway * 14, 96);
+  tail.quadraticCurveTo(226 + sway * 16, 62, 200 + sway * 18, 70);
+  return { parts: [head, earL, earR, p], tail };
+}
+function catEye(x, y, col, rgb, open, glow) {
+  if (open <= .02) return;
+  ctx.save(); ctx.translate(x, y);
+  ctx.shadowColor = `rgba(${rgb},${.9 * glow})`; ctx.shadowBlur = 40 * glow;
+  ctx.beginPath(); ctx.moveTo(-24, 0); ctx.quadraticCurveTo(0, -20 * open, 24, 0); ctx.quadraticCurveTo(0, 20 * open, -24, 0); ctx.closePath();
+  ctx.fillStyle = col; ctx.fill(); ctx.shadowBlur = 0; ctx.clip();
+  ctx.fillStyle = '#050505'; ctx.beginPath(); ctx.ellipse(0, 0, 4.5, 15 * open, 0, 0, TAU); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.beginPath(); ctx.arc(-7, -5 * open, 3, 0, TAU); ctx.fill();
+  ctx.restore();
+}
+function drawCat(t, reveal, eyesOpen) {
+  const sway = Math.sin(t * 2.2);
+  const { parts, tail } = catPath(sway);
+  ctx.save(); ctx.translate(CAT.x, CAT.y); ctx.scale(CAT.s, CAT.s);
+  ctx.save(); ctx.globalAlpha = .5 * reveal; ctx.fillStyle = '#000';             // 地上的影子
+  ctx.beginPath(); ctx.ellipse(20, 256, 230, 26, 0, 0, TAU); ctx.fill(); ctx.restore();
+  // 轮廓光：先描边再把内部填黑，只留下外轮廓；左半边橙色、右半边青色，对应两只眼睛
+  ctx.lineCap = 'round';
+  for (const [x0, rgb] of [[-400, O_RGB], [0, T_RGB]]) {
+    ctx.save(); ctx.beginPath(); ctx.rect(x0, -400, 400, 800); ctx.clip();
+    ctx.shadowColor = `rgba(${rgb},${.9 * reveal})`; ctx.shadowBlur = 24; ctx.strokeStyle = `rgba(${rgb},${.8 * reveal})`;
+    ctx.lineWidth = 36; ctx.stroke(tail);
+    ctx.restore();
+  }
+  ctx.strokeStyle = '#07080b'; ctx.lineWidth = 30; ctx.stroke(tail);
+  for (const [x0, rgb] of [[-400, O_RGB], [0, T_RGB]]) {
+    ctx.save(); ctx.beginPath(); ctx.rect(x0, -400, 400, 800); ctx.clip();
+    ctx.shadowColor = `rgba(${rgb},${.9 * reveal})`; ctx.shadowBlur = 24; ctx.strokeStyle = `rgba(${rgb},${.8 * reveal})`;
+    ctx.lineWidth = 6; parts.forEach(q => ctx.stroke(q));
+    ctx.restore();
+  }
+  ctx.fillStyle = '#07080b'; parts.forEach(q => ctx.fill(q));
+  ctx.save(); ctx.globalAlpha = .35 * reveal; ctx.strokeStyle = CREAM; ctx.lineWidth = 1.5;   // 胡须
+  for (const k of [-1, 1]) for (const dy of [-6, 6]) { ctx.beginPath(); ctx.moveTo(k * 50, -118 + dy * .5); ctx.lineTo(k * 140, -126 + dy * 2); ctx.stroke(); }
+  ctx.restore();
+  catEye(-42, -152, ORANGE, O_RGB, eyesOpen, 1);
+  catEye(42, -152, TEAL, T_RGB, eyesOpen, 1);
+  ctx.restore();
+}
+
+function frame(T) {
+  T = clamp(T, 0, DUR);
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.letterSpacing = '0px';
+  const g = ctx.createRadialGradient(W / 2, 860, 40, W / 2, 860, H * .7);
+  g.addColorStop(0, '#11141c'); g.addColorStop(1, '#020203'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  if (AVATAR) { drawCat(.3, 1, 1); return; }
+  if (OUTRO) {                                      // 片尾：睁着眼 → 文字 → 光散去 → 最后闭眼
+    const reveal = sstep(0, .35, T) * (1 - sstep(1.4, 1.9, T)), open = 1 - sstep(1.65, 2.15, T);
+    drawCat(T + 3, reveal, open);
+    const ta = sstep(.25, .6, T) * (1 - sstep(1.5, 1.9, T));
+    text('关注 @黑猫不说话', W / 2 + 4, 1230, { size: 66, weight: 900, ls: 8, color: CREAM, alpha: ta, glow: 'rgba(255,225,180,.25)', blur: 24 });
+    text(NEXT, W / 2 + 3, 1322, { size: 34, weight: 500, ls: 6, color: ORANGE, alpha: sstep(.45, .8, T) * (1 - sstep(1.5, 1.9, T)) });
+    return;
+  }
+  // 0–0.25 睁眼；0.95–1.05 眨一下；1.55–1.75 闭眼切走
+  const open = eout(T / .25) * (T > .95 && T < 1.07 ? Math.abs(T - 1.01) / .06 : 1) * (1 - sstep(1.55, 1.72, T));
+  const reveal = sstep(.2, .75, T) * (1 - sstep(1.5, 1.75, T));
+  drawCat(T, reveal, open);
+  const ta = sstep(.5, .85, T) * (1 - sstep(1.5, 1.72, T)), wipe = eout((T - .5) / .5);
+  ctx.save(); ctx.beginPath(); ctx.rect(W / 2 - 330, 1170, 660 * wipe, 120); ctx.clip();
+  text('黑猫不说话', W / 2 + 9, 1230, { size: 92, weight: 900, ls: 18, color: CREAM, alpha: ta, glow: 'rgba(255,225,180,.25)', blur: 24 });
+  ctx.restore();
+  text('不说话，只画人心', W / 2 + 6, 1318, { size: 36, weight: 500, ls: 12, color: DIM, alpha: sstep(.75, 1.05, T) * (1 - sstep(1.5, 1.72, T)) });
+}
+
+let fontsReady = false;
+Promise.all(['900', '500'].map(w => document.fonts.load(`${w} 40px ${SERIF}`, '黑猫不说话关注')))
+  .then(() => document.fonts.ready).then(() => { fontsReady = true; frame(AVATAR ? 0 : OUTRO ? 1 : 1.2); });
+window.__ready = () => fontsReady;
+window.__frame = (t, q = .95) => { frame(t); return cv.toDataURL('image/jpeg', q); };
+window.__duration = () => DUR;
+window.__cues = () => ({ total: DUR, cues: [], sections: [] });
+let t0 = null;
+document.getElementById('stage').onclick = () => { t0 = performance.now(); const loop = () => { const T = (performance.now() - t0) / 1000; frame(T); if (T < DUR) requestAnimationFrame(loop); }; loop(); };
+</script>
+</body>
+</html>
