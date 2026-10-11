@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{TITLE}}</title>
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>
+  :root { --bg: #000; }
+  html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; }
+  #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  canvas { height: 100vh; width: 56.25vh; max-width: 100vw; max-height: 177.78vw; background: #000; display: block; }
+  #hint { position: fixed; left: 0; right: 0; bottom: 16px; text-align: center; color: #888; font: 14px "Noto Sans SC", sans-serif; }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c" width="1080" height="1920"></canvas></div>
+<div id="hint">点击播放 / 暂停 · ← → 快退快进</div>
+<script>
+// 黑猫不说话 · 心理学 No.{{NO}}《{{FULLTITLE}}》
+// 电影感引擎（第三季起）：连续镜头、形变转场、逐字浮现的字幕、动态模糊、泛光与胶片颗粒。
+// 每一帧仍是时间 T 的纯函数：实时预览与逐帧导出（?export=1）画出的是同一帧。
