@@ -1,0 +1,8 @@
+shots/
+audio.wav
+audio_raw.wav
+cues.json
+body.mp4
+outro_raw.mp4
+out.mp4
+__pycache__/
