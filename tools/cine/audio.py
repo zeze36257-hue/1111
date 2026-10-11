@@ -37,7 +37,8 @@ for i, (a, b) in enumerate(meta['music']['segments']):
     if i > 0: seg[:fi] *= np.linspace(0, 1, fi)[:, None]
     if i < len(meta['music']['segments']) - 1: seg[-fo:] *= np.linspace(1, 0, fo)[:, None]
     parts.append(seg)
-music = np.concatenate(parts)[:N]
+lead = int(meta['music'].get('lead', 0) * SR)                      # 音乐前面留空（开头只有音效）
+music = np.concatenate([np.zeros((lead, 2))] + parts)[:N]
 if len(music) < N: music = np.pad(music, ((0, N - len(music)), (0, 0)))
 fo = int(meta['music'].get('fadeOut', 3) * SR)
 music[-fo:] *= (np.linspace(1, 0, fo) ** 1.6)[:, None]
@@ -142,12 +143,58 @@ def synth(kind, o):
         n = int(.06 * SR); t = np.arange(n) / SR
         x = .6 * band(noise(n), 2000, 5000) * np.exp(-t / .004) + .5 * np.sin(2 * np.pi * 1650 * t) * np.exp(-t / .015)
         return pan(x, .15) * g
+    if kind == 'ding':                                                     # 手机通知：两声短促的钟音
+        n = int(.9 * SR); t = np.arange(n) / SR; f = o.get('f', 1318.5)
+        x = np.sin(2 * np.pi * f * t) * np.exp(-t / .16) + .6 * np.sin(2 * np.pi * f * 1.335 * t) * np.exp(-np.maximum(0, t - .09) / .2) * (t > .09)
+        x += .2 * np.sin(2 * np.pi * f * 2.0 * t) * np.exp(-t / .05)
+        return pan(x * ramp(n, .002) * .5, o.get('pan', rng.uniform(-.5, .5))) * g
+    if kind == 'drone':                                                    # 越来越紧的低音和噪声
+        d = o.get('dur', 2.7); n = int(d * SR); p = np.linspace(0, 1, n); t = np.arange(n) / SR
+        f = 55 * 2 ** (p * 1.0); x = .5 * np.sin(2 * np.pi * np.cumsum(f) / SR) + .3 * np.sin(2 * np.pi * np.cumsum(f * 1.5) / SR)
+        x += .5 * band(noise(n), 300, 2400) * p ** 2
+        return pan(np.tanh(x * (.6 + 1.4 * p)) * p ** 1.5 * .7, 0) * g
+    if kind == 'stop':                                                     # 所有声音戛然而止：一记短促的“磁带停转”
+        n = int(.45 * SR); t = np.arange(n) / SR
+        f = 220 * np.exp(-t / .12); x = np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t / .15)
+        return pan(x * .6, 0) * g
+    if kind == 'chain':                                                    # 锁链：几声金属碰撞
+        n = int(1.2 * SR); x = np.zeros(n)
+        for k in range(5):
+            s0 = int((k * .11 + rng.uniform(0, .04)) * SR); L = int(.5 * SR); tt = np.arange(L) / SR
+            hit = sum(np.sin(2 * np.pi * f * tt) * np.exp(-tt / d) for f, d in [(2350, .08), (3720, .05), (5100, .03), (1580, .12)])
+            x[s0:s0 + L] += hit[:n - s0] * rng.uniform(.4, 1)
+        return pan(x * .25, rng.uniform(-.3, .3)) * g
+    if kind == 'page':                                                     # 翻书
+        n = int(.5 * SR); p = np.linspace(0, 1, n)
+        x = band(noise(n), 1200, 7000) * np.sin(np.pi * p) ** 3 * .5
+        return pan(x, np.linspace(-.4, .4, n)) * g
+    if kind == 'creak':                                                    # 拉弓：绷紧的低沉摩擦
+        d = o.get('dur', 2.8); n = int(d * SR); p = np.linspace(0, 1, n); t = np.arange(n) / SR
+        x = band(noise(n), 180, 900) * (.3 + .7 * p) * (1 + .5 * np.sin(2 * np.pi * 23 * t))
+        x += .3 * np.sin(2 * np.pi * np.cumsum(90 + 140 * p) / SR) * p
+        return pan(x * .35 * p ** .8, -.2) * g
+    if kind == 'arrow':                                                    # 箭离弦：短促的高频呼啸 + 弦的回弹
+        n = int(1.1 * SR); t = np.arange(n) / SR
+        x = sweep_noise(1.1, 6000, 1500, lambda p: np.exp(-p * 4) * np.minimum(1, p * 40)) * .5
+        x += .5 * np.sin(2 * np.pi * 110 * t) * np.exp(-t / .08)
+        return pan(x, np.linspace(-.5, .7, n)) * g
+    if kind == 'thunk':                                                    # 箭射中靶子
+        n = int(.6 * SR); t = np.arange(n) / SR
+        x = np.sin(2 * np.pi * 160 * t) * np.exp(-t / .07) + .5 * band(noise(n), 400, 2500) * np.exp(-t / .02)
+        x += .3 * np.sin(2 * np.pi * 47 * t * (1 + 3 * np.exp(-t / .05))) * np.exp(-t / .12)
+        return pan(np.tanh(x * 1.3), .4) * g
+    if kind == 'wind':                                                     # 风
+        d = o.get('dur', 6); n = int(d * SR); p = np.linspace(0, 1, n); t = np.arange(n) / SR
+        gust = .55 + .45 * np.sin(2 * np.pi * .35 * t + 1) * np.sin(2 * np.pi * .13 * t)
+        x = sweep_noise(d, 500, 900, lambda p: np.sin(np.pi * p) ** .6) * gust * .45
+        return pan(x, np.sin(2 * np.pi * .2 * t) * .6) * g
     raise ValueError(kind)
 
 
 sfx = np.zeros((N + 6 * SR, 2))
 for t, kind, o in cues['cues']:
     s = int(t * SR); x = synth(kind, o)
+    if s < 0: x, s = x[-s:], 0                                            # 开始于第一帧之前的音效，只留下后半截
     sfx[s:s + len(x)] += x[:len(sfx) - s]
 # 一个合成的小房间：衰减的噪声做脉冲响应，左右不相关
 ir_n = int(2.2 * SR); ir = np.stack([noise(ir_n), noise(ir_n)], 1) * env_exp(ir_n, .55)[:, None]
