@@ -188,6 +188,14 @@ def synth(kind, o):
         gust = .55 + .45 * np.sin(2 * np.pi * .35 * t + 1) * np.sin(2 * np.pi * .13 * t)
         x = sweep_noise(d, 500, 900, lambda p: np.sin(np.pi * p) ** .6) * gust * .45
         return pan(x, np.sin(2 * np.pi * .2 * t) * .6) * g
+    if kind == 'slap':                                                     # 钱包落地：皮革拍在地上
+        n = int(.5 * SR); t = np.arange(n) / SR
+        x = .7 * band(noise(n), 250, 2600) * np.exp(-t / .025) + .6 * np.sin(2 * np.pi * 95 * t) * np.exp(-t / .06)
+        return pan(np.tanh(x * 1.5), o.get('pan', 0)) * g
+    if kind == 'bar':                                                      # 柱子升起：上滑的音
+        d = o.get('dur', .9); n = int(d * SR); p = np.linspace(0, 1, n)
+        x = .35 * sine_sweep(o.get('f0', 330), o.get('f1', 880), n) * np.sin(np.pi * p) ** .5 * (1 - p) ** .3
+        return pan(x, o.get('pan', 0)) * g
     raise ValueError(kind)
 
 
