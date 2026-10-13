@@ -1,0 +1,836 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>功利主义</title>
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>
+  :root { --bg: #000; }
+  html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; }
+  #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  canvas { height: 100vh; width: 56.25vh; max-width: 100vw; max-height: 177.78vw; background: #000; display: block; }
+  #hint { position: fixed; left: 0; right: 0; bottom: 16px; text-align: center; color: #888; font: 14px "Noto Sans SC", sans-serif; }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c" width="1080" height="1920"></canvas></div>
+<div id="hint">点击播放 / 暂停 · ← → 快退快进</div>
+<script>
+// 黑猫不说话 · 心理学 No.18《功利主义：救 5 个人，可以牺牲 1 个人吗？》
+// 电影感引擎（第三季起）：连续镜头、形变转场、逐字浮现的字幕、动态模糊、泛光与胶片颗粒。
+// 每一帧仍是时间 T 的纯函数：实时预览与逐帧导出（?export=1）画出的是同一帧。
+'use strict';
+// ======================================================================== 基础
+const W = 1080, H = 1920, FPS = 30, SHUTTER = .5;                 // 180° 快门：每帧曝光半个帧间隔
+const EXPORT = /[?&]export=1/.test(location.search);
+const cv = document.getElementById('c'), OUT = cv.getContext('2d');
+const mk = (w, h) => Object.assign(document.createElement('canvas'), { width: w, height: h });
+const LAYER = mk(W, H), LCTX = LAYER.getContext('2d');          // 动态模糊：子帧先画在这里，再平均到 OUT
+const BLOOM = mk(W / 4, H / 4), BCTX = BLOOM.getContext('2d');   // 泛光：缩小、提亮部、模糊后叠回去
+let ctx = OUT;
+
+const PI = Math.PI, TAU = PI * 2;
+const clamp = (x, a = 0, b = 1) => x < a ? a : x > b ? b : x;
+const lerp = (a, b, t) => a + (b - a) * t;
+const prog = (t, a, b) => clamp((t - a) / (b - a));
+const sstep = (a, b, x) => { const t = prog(x, a, b); return t * t * (3 - 2 * t); };
+const win = (t, a, b, fi = .5, fo = .5) => sstep(a, a + fi, t) * (1 - sstep(b - fo, b, t));
+const E = {
+  lin: t => clamp(t),
+  io: t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; },
+  out: t => 1 - Math.pow(1 - clamp(t), 3),
+  in: t => Math.pow(clamp(t), 3),
+  outQuint: t => 1 - Math.pow(1 - clamp(t), 5),
+  outExpo: t => (t = clamp(t)) >= 1 ? 1 : 1 - Math.pow(2, -10 * t),
+  inExpo: t => (t = clamp(t)) <= 0 ? 0 : Math.pow(2, 10 * t - 10),
+  ioExpo: t => { t = clamp(t); return t <= 0 ? 0 : t >= 1 ? 1 : t < .5 ? Math.pow(2, 20 * t - 10) / 2 : (2 - Math.pow(2, -20 * t + 10)) / 2; },
+  ioSine: t => -(Math.cos(PI * clamp(t)) - 1) / 2,
+};
+// 关键帧轨道：[[t, v, ease?], …]，ease 作用于从这一帧到下一帧的那一段（默认三次缓入缓出）
+function track(keys) {
+  return T => {
+    if (T <= keys[0][0]) return keys[0][1];
+    for (let i = 0; i < keys.length - 1; i++) {
+      const [a, va, e] = keys[i], [b, vb] = keys[i + 1];
+      if (T < b) return lerp(va, vb, (e || E.io)((T - a) / (b - a)));
+    }
+    return keys[keys.length - 1][1];
+  };
+}
+function mulberry(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function hash2(i, j) { let h = Math.imul(i, 374761393) + Math.imul(j, 668265263) | 0; h = Math.imul(h ^ h >>> 13, 1274126177); return ((h ^ h >>> 16) >>> 0) / 4294967296; }
+function vnoise(x, y) {
+  const i = Math.floor(x), j = Math.floor(y), fx = x - i, fy = y - j, u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
+  return lerp(lerp(hash2(i, j), hash2(i + 1, j), u), lerp(hash2(i, j + 1), hash2(i + 1, j + 1), u), v);
+}
+function fbm(x, y, o = 4) { let s = 0, a = .5, f = 1, n = 0; for (let k = 0; k < o; k++) { s += a * vnoise(x * f, y * f); n += a; f *= 2.03; a *= .5; } return s / n; }
+
+const SERIF = '"Noto Serif SC", serif', SANS = '"Noto Sans SC", sans-serif', LAT = '"Cormorant Garamond", serif';
+const ORANGE = '#f2a14a', TEAL = '#4fd6c4', CREAM = '#ece6da', DIM = '#8a93a3';
+const O_RGB = '242,161,74', T_RGB = '79,214,196', C_RGB = '236,230,218';
+
+function reset(c) {
+  c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 1; c.globalCompositeOperation = 'source-over'; c.filter = 'none';
+  c.shadowBlur = 0; c.shadowColor = 'rgba(0,0,0,0)'; c.letterSpacing = '0px'; c.setLineDash([]); c.lineCap = 'butt'; c.lineJoin = 'miter';
+}
+
+// ======================================================================== 基础绘制
+function font(size, weight = 500, fam = SERIF, style = '') { ctx.font = `${style} ${weight} ${size}px ${fam}`; }
+function text(s, x, y, o = {}) {
+  if ((o.alpha ?? 1) <= 0) return;
+  ctx.save();
+  font(o.size || 44, o.weight || 500, o.font || SERIF, o.style || '');
+  ctx.textAlign = o.align || 'left'; ctx.textBaseline = o.base || 'middle';
+  ctx.globalAlpha *= o.alpha ?? 1; ctx.letterSpacing = (o.ls || 0) + 'px';
+  if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = o.blur ?? 20; }
+  if (o.filter) ctx.filter = o.filter;
+  ctx.fillStyle = o.color || CREAM; ctx.fillText(s, x, y);
+  ctx.restore();
+}
+// 发光的点：外圈光晕 + 实心核
+function glow(x, y, r, rgb, a = 1, halo = 5) {
+  if (a <= 0 || r <= 0) return;
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const R = r * halo, g = ctx.createRadialGradient(x, y, 0, x, y, R);
+  g.addColorStop(0, `rgba(${rgb},${.55 * a})`); g.addColorStop(.25, `rgba(${rgb},${.18 * a})`); g.addColorStop(1, `rgba(${rgb},0)`);
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, R, 0, TAU); ctx.fill();
+  ctx.restore();
+  ctx.save(); ctx.globalAlpha *= a; ctx.fillStyle = `rgb(${rgb})`; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); ctx.restore();
+}
+function seg(x1, y1, x2, y2, col, lw = 2, a = 1) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a; ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore();
+}
+
+// ======================================================================== 文字：逐字浮现
+// 「」里的字用高亮色
+function runs(s) { const r = []; let hi = false; for (const ch of s) { if (ch === '「') { hi = true; continue; } if (ch === '」') { hi = false; continue; } r.push({ ch, hi }); } return r; }
+function advances(rs, o) { font(o.size, o.weight || 500, o.font || SERIF, o.style || ''); ctx.letterSpacing = '0px'; return rs.map(c => ctx.measureText(c.ch).width + (o.ls || 0)); }
+const runWidth = (rs, o) => advances(rs, o).reduce((a, b) => a + b, 0) - (o.ls || 0);
+// p：0 → 1 的出现进度；每个字从模糊、偏下、透明变清晰，前后重叠 spread 个字
+function typeRun(rs, x, y, o, p, alpha = 1) {
+  if (alpha <= 0 || p <= 0) return;
+  const adv = advances(rs, o), total = adv.reduce((a, b) => a + b, 0) - (o.ls || 0);
+  let cx = o.align === 'center' ? x - total / 2 : o.align === 'right' ? x - total : x;
+  const n = rs.length, sp = o.spread ?? 6;
+  ctx.save(); ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = o.glowBlur ?? 24; }
+  for (let i = 0; i < n; i++) {
+    const e = E.out(clamp((p * (n + sp) - i) / sp));
+    if (e > 0) {
+      ctx.globalAlpha = alpha * e;
+      const b = (1 - e) * (o.blur ?? 10);
+      ctx.filter = b > .4 ? `blur(${b.toFixed(1)}px)` : 'none';
+      ctx.fillStyle = rs[i].hi ? (o.hi || ORANGE) : (o.color || CREAM);
+      ctx.fillText(rs[i].ch, cx, y + (1 - e) * (o.rise ?? 22));
+    }
+    cx += adv[i];
+  }
+  ctx.restore();
+}
+const typeText = (s, x, y, o, p, alpha) => typeRun(runs(s), x, y, o, p, alpha);
+
+// 断行：放得下就一行；否则两行，优先在标点后断、取最均衡的位置；不拆英文单词和数字
+const PUNCT = '，、：；。？！——…';
+function wrapRuns(rs, o, max) {
+  const wid = a => runWidth(a, o);
+  if (wid(rs) <= max) return [rs];
+  let best = -1, bd = 1e9;
+  rs.forEach((c, i) => {
+    if (!PUNCT.includes(c.ch) || i === rs.length - 1) return;
+    const a = wid(rs.slice(0, i + 1)), b = wid(rs.slice(i + 1));
+    if (a <= max && b <= max && Math.abs(a - b) < bd) { bd = Math.abs(a - b); best = i + 1; }
+  });
+  if (best < 0) rs.forEach((c, i) => {
+    if (i === 0 || PUNCT.includes(c.ch) || /\w\w/.test(rs[i - 1].ch + c.ch)) return;
+    const a = wid(rs.slice(0, i)), b = wid(rs.slice(i));
+    if (a <= max && b <= max && Math.abs(a - b) < bd) { bd = Math.abs(a - b); best = i; }
+  });
+  return best > 0 ? [rs.slice(0, best), rs.slice(best)] : [rs];
+}
+
+// ======================================================================== 字幕（无配音，字幕就是旁白）
+// 左下角衬线字，逐字浮现；离场时轻轻上浮淡出。位置避开 TikTok 底部文案和右侧按钮。
+const NARR = { x: 96, y: 1436, lh: 68, max: 880, size: 46, weight: 500, font: SERIF, ls: 2, spread: 7, rise: 14, blur: 8 };
+const WRAP_CACHE = new Map();
+function narration(T) {
+  let shade = 0;
+  for (const [a, b] of LINES) shade = Math.max(shade, win(T, a - .4, b + .6, .5, .6));
+  if (shade > 0) {
+    const g = ctx.createLinearGradient(0, 1250, 0, 1620); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(.5, `rgba(0,0,0,${.42 * shade})`); g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 1250, W, 370);
+  }
+  for (const [a, b, s] of LINES) {
+    if (T < a || T > b + .7) continue;
+    if (!WRAP_CACHE.has(s)) WRAP_CACHE.set(s, wrapRuns(runs(s), NARR, NARR.max));
+    const lines = WRAP_CACHE.get(s);
+    const fade = 1 - sstep(b, b + .6, T), drift = -16 * E.in(prog(T, b, b + .7));
+    const n = lines.reduce((k, l) => k + l.length, 0), dur = Math.min(1.2, .3 + n * .03);
+    lines.forEach((ln, i) => {
+      const t0 = a + i * .22;
+      typeRun(ln, NARR.x, NARR.y + (i - (lines.length - 1)) * NARR.lh + drift, { ...NARR, glow: 'rgba(0,0,0,.9)', glowBlur: 14 }, prog(T, t0, t0 + dur), fade);
+    });
+  }
+}
+
+// ======================================================================== 右上角的年份 / 出处
+function stamp(s, sub, t0, t1, T) {
+  const a = win(T, t0, t1, .7, .7); if (a <= 0) return;
+  const e = E.outExpo(prog(T, t0, t0 + 1.4));
+  text(s, W - 96 + (1 - e) * 40, 412, { font: LAT, weight: 600, size: 56, align: 'right', alpha: a * .95, ls: 4 });
+  if (sub) text(sub, W - 96 + (1 - e) * 70, 462, { font: LAT, style: 'italic', weight: 500, size: 29, align: 'right', color: DIM, alpha: a });
+}
+
+// ======================================================================== 顶部分段进度条
+// 放在 TikTok 顶部“关注 / 推荐”栏之下（y = 336）。当前段落橙色，头部带一颗发光的点；段落名切换时上下交替。
+const PB = { y: 336, x0: 96, x1: 984, gap: 12 };
+function progress(T, a = 1) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a;
+  const span = PB.x1 - PB.x0 - PB.gap * (SECTIONS.length - 1);
+  let x = PB.x0, cur = 0;
+  SECTIONS.forEach(([, s0, s1], i) => {
+    const w = span * (s1 - s0) / TOTAL, f = clamp((T - s0) / (s1 - s0)); if (T >= s0) cur = i;
+    ctx.fillStyle = 'rgba(255,255,255,.14)'; ctx.fillRect(x, PB.y - 1, w, 2);
+    if (f > 0) {
+      ctx.fillStyle = f < 1 ? ORANGE : 'rgba(236,230,218,.7)'; ctx.fillRect(x, PB.y - 1, w * f, 2);
+      if (f < 1) glow(x + w * f, PB.y, 3.2, O_RGB, 1, 5);
+    }
+    x += w + PB.gap;
+  });
+  SECTIONS.forEach(([name, s0], i) => {
+    const s1 = SECTIONS[i + 1] ? SECTIONS[i + 1][1] : TOTAL + 9;
+    const k = (i ? sstep(s0, s0 + .45, T) : 1) * (1 - sstep(s1 - .45, s1, T)); if (k <= 0) return;
+    const e = i ? sstep(s0, s0 + .45, T) : 1, y = PB.y - 34 + (1 - e) * 10 - 10 * sstep(s1 - .45, s1, T);
+    text(`${String(i + 1).padStart(2, '0')}   ${name}`, PB.x0, y, { size: 27, weight: 500, color: CREAM, alpha: .88 * k, ls: 4 });
+  });
+  text(`${String(cur + 1).padStart(2, '0')} / ${String(SECTIONS.length).padStart(2, '0')}`, PB.x1, PB.y - 34, { font: LAT, weight: 600, size: 30, color: DIM, align: 'right', ls: 2 });
+  ctx.restore();
+}
+
+// ======================================================================== 水印
+// 低透明度、缓慢漂移，活动范围避开进度条和字幕
+const WM = '@黑猫不说话';
+function watermark(T, a = 1) {
+  const x = 540 + Math.sin(T * TAU / 47 + 1.1) * 210 + Math.sin(T * TAU / 83 + 1) * 50;
+  const y = 860 + Math.sin(T * TAU / 61 + 1.3) * 300;
+  text(WM, x, y, { font: SANS, weight: 500, size: 30, align: 'center', color: '#ffffff', alpha: .16 * a, ls: 2 });
+}
+
+// ======================================================================== 后期：泛光、暗角、颗粒
+const GRAIN = (() => {
+  const c = mk(256, 256), g = c.getContext('2d'), im = g.createImageData(256, 256), r = mulberry(3);
+  for (let i = 0; i < im.data.length; i += 4) { const v = r() * 255; im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 255; }
+  g.putImageData(im, 0, 0); return c;
+})();
+function bloom(k) {
+  if (k <= 0) return;
+  reset(BCTX); BCTX.globalCompositeOperation = 'copy'; BCTX.filter = 'brightness(.9) contrast(2.4) blur(5px)';
+  BCTX.drawImage(cv, 0, 0, W / 4, H / 4);
+  OUT.save(); OUT.globalCompositeOperation = 'screen'; OUT.globalAlpha = k; OUT.imageSmoothingQuality = 'high'; OUT.drawImage(BLOOM, 0, 0, W, H); OUT.restore();
+}
+function grade(T, vig = .62, grain = .07) {
+  const v = ctx.createRadialGradient(W / 2, H * .46, H * .26, W / 2, H * .46, H * .82);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, `rgba(0,0,0,${vig})`); ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+  const f = Math.floor(T * FPS), ox = (f * 97) % 256, oy = (f * 61) % 256;
+  ctx.save(); ctx.globalAlpha = grain; ctx.globalCompositeOperation = 'overlay';
+  ctx.fillStyle = ctx.createPattern(GRAIN, 'repeat'); ctx.translate(-ox, -oy); ctx.fillRect(0, 0, W + 256, H + 256); ctx.restore();
+}
+
+// ======================================================================== 一帧
+// 剧集提供：TOTAL、SECTIONS、LINES、CUES、INIT()、WORLD(t)、SAMPLES(T)、OVER(T)、MASTER(T)
+function render(T) {
+  T = clamp(T, 0, TOTAL - 1e-4);
+  const n = Math.max(1, SAMPLES(T) | 0);
+  reset(OUT);
+  for (let k = 0; k < n; k++) {
+    const t = n === 1 ? T : T + (k / (n - 1) - .5) * SHUTTER / FPS;
+    ctx = n === 1 ? OUT : LCTX; reset(ctx); ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+    WORLD(t);
+    if (n > 1) { reset(OUT); OUT.globalAlpha = 1 / (k + 1); OUT.drawImage(LAYER, 0, 0); }
+  }
+  ctx = OUT; reset(OUT);
+  bloom(BLOOM_K(T)); reset(OUT);
+  grade(T); reset(OUT);
+  OVER(T); reset(OUT);
+  narration(T); reset(OUT);
+  const m = MASTER(T);
+  watermark(T, m); progress(T, m); reset(OUT);
+  const dark = sstep(TOTAL - .9, TOTAL, T);                         // 第一帧就是封面，不做淡入；结尾淡出接片尾
+  if (dark > 0) { OUT.fillStyle = `rgba(0,0,0,${dark})`; OUT.fillRect(0, 0, W, H); }
+}
+
+// ======================================================================== No.18 功利主义：救 5 个人，可以牺牲 1 个人吗？
+// 第三季·主义 ⑤。开头是电车难题：拉下拉杆，1 换 5，你拉不拉？再换成亲手把人推下天桥（Awad et al., 2020, PNAS）。
+// 音乐：原创配乐（music.py，C 小调 90 BPM），从第 0 秒放到最后一秒，不剪不断。开头的钢琴是“火车轮子”的 3+3+2 节奏。
+// 画面的每个段落都落在配乐的小节线上（1 小节 = 2.667 秒）：
+//   16.0 标题（全编制进入） · 37.33 快乐计算（每拍一个鼓点、钢琴十六分音符） · 53.33 心的警报（紧张） · 64.0 数字面前（只剩钢琴）
+//   80.0 高潮（小提琴和圆号） · 93.33 A♭（假终止） · 96.0 C 大调：每个人，都算一个
+const BEAT = 60 / 90, BAR = BEAT * 4, BT = n => n * BEAT;
+const LIFT = BT(24), CALC = BT(56), ALARM = BT(80), NUMB = BT(96), CLIMAX = BT(120), FINAL = BT(144), TOTAL = BT(156);
+const SECTIONS = [['电车测试', 0, LIFT], ['边沁', LIFT, CALC], ['快乐计算', CALC, ALARM], ['心的警报', ALARM, NUMB], ['数字面前', NUMB, CLIMAX], ['都算一个', CLIMAX, TOTAL]];
+const SERIES = '黑猫不说话 · 心理学 No.18';
+const Q = { c3: BT(6), c2: BT(8), c1: BT(10), REVEAL: BT(12), FOOT: BT(16) };
+
+const LINES = [
+  [0.15, 3.9, '电车失控了。不拉拉杆，5 个人会死；拉了，死 1 个。'],
+  [4.1, 7.6, '你会拉吗？先在心里选一个。'],
+  [8.2, 10.4, '42 个国家、7 万人的调查里，平均 8 成会拉。'],
+  [10.8, 13.3, '可如果，要你亲手把一个人推下天桥，挡住电车呢？'],
+  [13.6, 15.7, '愿意的人，一下只剩一半。'],
+  [16.3, 19.6, '同样是 1 换 5，为什么感觉完全不一样？'],
+  [20.1, 23.7, '我们说一个人「很功利」，是说他只想着自己。'],
+  [24.0, 27.4, '可功利主义的创始人边沁，说的恰恰相反：'],
+  [27.7, 31.3, '对错的标准，是「最大多数人的最大幸福」。'],
+  [31.6, 35.3, '而且每个人都只算一个，谁也不比谁多算。'],
+  [37.6, 40.6, '他认真到，连自己的遗体都要「有用」：'],
+  [40.9, 44.8, '捐给医学解剖，骨架穿上他的衣服，至今坐在伦敦的一个玻璃柜里。'],
+  [45.1, 48.8, '他还想把快乐变成能算的数字：多强、多久、多确定、影响多少人……'],
+  [49.1, 52.9, '按这个算法，5 个人的幸福，当然大于 1 个人。'],
+  [53.6, 57.6, '可是推人下桥时，大脑里和情绪有关的区域，明显更活跃。'],
+  [57.9, 63.4, '心理学家认为，这像一道警报：别亲手伤害一个人。'],
+  [64.3, 67.6, '可同一颗心，在数字面前，却常常失灵。'],
+  [67.9, 71.9, '问人们：愿意出多少钱，救下 2000 只会淹死在油污池里的候鸟？'],
+  [72.2, 75.9, '平均 80 美元。换成 20 万只——88 美元。'],
+  [76.3, 79.6, '数量多了 100 倍，心意几乎没变。'],
+  [80.3, 84.2, '功利主义最激进的地方，是要你把圈子画得更大：'],
+  [84.5, 88.4, '家人、朋友、陌生人，还有你永远见不到的人。'],
+  [88.7, 92.6, '算，是为了不漏掉任何一个人；心，是为了不把人当成数字。'],
+  [98.4, 103.0, '评论区：电车难题，你会拉下拉杆吗？'],
+];
+
+// ======================================================================== 共用
+function space() {
+  const g = ctx.createRadialGradient(540, 820, 80, 540, 820, 1500);
+  g.addColorStop(0, '#12141c'); g.addColorStop(.55, '#08090f'); g.addColorStop(1, '#020305');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
+let STARS = [], CROWD = [], FLOCK = [], RINGS = [], FAR = [];
+function starfield(t, A) {
+  if (A <= 0) return;
+  ctx.save();
+  for (const s of STARS) {
+    let x = s.x - t * 3 * s.z; x = ((x + 20) % (W + 40) + W + 40) % (W + 40) - 20;
+    const y = s.y - t * 1.2 * s.z, al = A * s.b * (.72 + .28 * Math.sin(t * s.tw + s.ph));
+    if (al <= .012 || y < -6 || y > H + 6) continue;
+    ctx.globalAlpha = Math.min(1, al); ctx.fillStyle = s.warm ? '#ffdcae' : '#e2eaff'; ctx.fillRect(x - s.s / 2, y - s.s / 2, s.s, s.s);
+  }
+  ctx.restore();
+}
+const STAR_A = track([[0, .12], [LIFT - .4, .12], [LIFT, .55], [LIFT + 3, .3], [19.8, .3], [20.6, .14], [CALC - .5, .14], [CALC, .05], [ALARM, .05],
+  [NUMB - .3, .05], [NUMB + 1, .2], [CLIMAX - .2, .2], [CLIMAX + .4, .85], [TOTAL, .85]]);
+function warmth(a, x = 540, y = 980, r = 900, rgb = '255,170,90') {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, `rgba(${rgb},${.16 * a})`); g.addColorStop(1, `rgba(${rgb},0)`);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); ctx.restore();
+}
+function seriesTag(y, a) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a;
+  font(30, 500); ctx.letterSpacing = '6px'; const w = ctx.measureText(SERIES).width;
+  text(SERIES, W / 2, y, { size: 30, weight: 500, align: 'center', color: ORANGE, ls: 6 });
+  ctx.strokeStyle = `rgba(${O_RGB},.5)`; ctx.lineWidth = 1.5;
+  for (const k of [-1, 1]) { ctx.beginPath(); ctx.moveTo(W / 2 + k * (w / 2 + 24), y); ctx.lineTo(W / 2 + k * (w / 2 + 84), y); ctx.stroke(); }
+  ctx.restore();
+}
+function you(x, y, t, a = 1, r = 9) {
+  if (a <= 0) return;
+  const pulse = (t * .75) % 1;
+  ctx.save(); ctx.globalAlpha = a * (1 - pulse) * .45; ctx.strokeStyle = ORANGE; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(x, y, r + 4 + pulse * 44, 0, TAU); ctx.stroke(); ctx.restore();
+  glow(x, y, r, O_RGB, a, 6);
+}
+function pill(s, x, y, a, o = {}) {
+  if (a <= 0) return;
+  const size = o.size || 30; font(size, o.weight || 500, SANS); const w = Math.max(o.minW || 0, ctx.measureText(s).width + 64);
+  ctx.save(); ctx.globalAlpha *= a; ctx.translate(x, y); ctx.scale(o.sc || 1, o.sc || 1);
+  if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = 28; }
+  ctx.fillStyle = o.fill || 'rgba(255,255,255,.07)'; ctx.beginPath(); ctx.roundRect(-w / 2, -size * 1.1, w, size * 2.2, size * 1.1); ctx.fill();
+  ctx.shadowColor = 'rgba(0,0,0,0)'; ctx.strokeStyle = o.stroke || 'rgba(255,255,255,.18)'; ctx.lineWidth = 1.6; ctx.stroke();
+  text(s, 0, 1, { font: SANS, weight: o.weight || 500, size, align: 'center', color: o.color || CREAM });
+  ctx.restore();
+}
+// 一个小人：头 + 身子
+function person(x, y, s = 1, a = 1, col = '#d9dee7', glowCol) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a; ctx.fillStyle = col;
+  if (glowCol) { ctx.shadowColor = glowCol; ctx.shadowBlur = 16; }
+  ctx.beginPath(); ctx.arc(x, y - 50 * s, 10 * s, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(x - 13 * s, y - 2 * s); ctx.quadraticCurveTo(x - 15 * s, y - 36 * s, x, y - 37 * s); ctx.quadraticCurveTo(x + 15 * s, y - 36 * s, x + 13 * s, y - 2 * s); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+const big = { align: 'center', spread: 3, blur: 14, rise: 18 };
+
+// ======================================================================== ① 电车测试（0–16）
+// 轨道示意图：主轨上 5 个人，岔道上 1 个人，岔口旁边是拉杆和“你”
+const MAIN = [[40, 1040], [1040, 1040]];
+const SIDE = (() => { const p = []; for (let i = 0; i <= 24; i++) { const u = i / 24; p.push([(1 - u) ** 3 * 440 + 3 * u * (1 - u) ** 2 * 560 + 3 * u * u * (1 - u) * 600 + u ** 3 * 730, (1 - u) ** 3 * 1040 + 3 * u * (1 - u) ** 2 * 1040 + 3 * u * u * (1 - u) * 860 + u ** 3 * 860]); } p.push([1040, 860]); return p; })();
+function rails(pts, a, col = 'rgba(232,226,214,.75)') {                        // 两根钢轨 + 枕木
+  if (a <= 0) return;
+  const segs = []; let L = 0;
+  for (let i = 1; i < pts.length; i++) { const [x1, y1] = pts[i - 1], [x2, y2] = pts[i], d = Math.hypot(x2 - x1, y2 - y1); segs.push([x1, y1, x2, y2, d]); L += d; }
+  ctx.save(); ctx.globalAlpha *= a;
+  for (const off of [-7, 7]) {
+    ctx.strokeStyle = col; ctx.lineWidth = 2.2; ctx.beginPath();
+    pts.forEach(([x, y], i) => {
+      const j = Math.min(i, pts.length - 2), [x1, y1] = pts[j], [x2, y2] = pts[j + 1], d = Math.hypot(x2 - x1, y2 - y1) || 1;
+      const nx = -(y2 - y1) / d * off, ny = (x2 - x1) / d * off; i ? ctx.lineTo(x + nx, y + ny) : ctx.moveTo(x + nx, y + ny);
+    });
+    ctx.stroke();
+  }
+  ctx.strokeStyle = 'rgba(232,226,214,.25)'; ctx.lineWidth = 3;
+  let acc = 0;
+  for (const [x1, y1, x2, y2, d] of segs) {
+    for (let s = (34 - acc % 34) % 34; s < d; s += 34) {
+      const u = s / d, x = lerp(x1, x2, u), y = lerp(y1, y2, u), nx = -(y2 - y1) / d * 13, ny = (x2 - x1) / d * 13;
+      ctx.beginPath(); ctx.moveTo(x - nx, y - ny); ctx.lineTo(x + nx, y + ny); ctx.stroke();
+    }
+    acc += d;
+  }
+  ctx.restore();
+}
+function routeGlow(pts, k, a, t, col = '229,72,77') {                          // 电车将要走的路：一条流动的光
+  if (a <= 0 || k <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a; ctx.strokeStyle = `rgba(${col},.9)`; ctx.lineWidth = 4; ctx.lineCap = 'round';
+  ctx.shadowColor = `rgba(${col},.9)`; ctx.shadowBlur = 16; ctx.setLineDash([18, 22]); ctx.lineDashOffset = -t * 60;
+  ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.stroke(); ctx.restore();
+}
+function trolley(x, y, a, t) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a; ctx.translate(x, y + Math.sin(t * 9) * .8);
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';                                   // 车灯
+  const g = ctx.createRadialGradient(80, -36, 4, 80, -36, 260); g.addColorStop(0, 'rgba(255,214,150,.5)'); g.addColorStop(1, 'rgba(255,214,150,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(80, -36); ctx.lineTo(330, -110); ctx.lineTo(330, 30); ctx.closePath(); ctx.fill(); ctx.restore();
+  ctx.fillStyle = '#1b2130'; ctx.strokeStyle = 'rgba(242,161,74,.85)'; ctx.lineWidth = 2.5; ctx.shadowColor = `rgba(${O_RGB},.5)`; ctx.shadowBlur = 14;
+  ctx.beginPath(); ctx.roundRect(-80, -78, 160, 64, 12); ctx.fill(); ctx.stroke(); ctx.shadowBlur = 0;
+  ctx.fillStyle = 'rgba(255,214,150,.7)'; for (const wx of [-58, -22, 14]) { ctx.beginPath(); ctx.roundRect(wx, -68, 28, 22, 4); ctx.fill(); }
+  ctx.fillStyle = '#0c0f16'; ctx.strokeStyle = 'rgba(232,226,214,.7)'; ctx.lineWidth = 2;
+  for (const wx of [-50, 50]) { ctx.beginPath(); ctx.arc(wx, -10, 10, 0, TAU); ctx.fill(); ctx.stroke(); }
+  ctx.restore();
+  glow(x + 80, y - 36, 5, '255,226,180', a, 4);
+}
+function lever(x, y, pulled, a) {
+  if (a <= 0) return;
+  const an = lerp(-.55, .55, pulled);
+  ctx.save(); ctx.globalAlpha *= a; ctx.strokeStyle = 'rgba(232,226,214,.85)'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(x, y, 18, PI, TAU); ctx.closePath(); ctx.stroke();
+  ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.sin(an) * 64, y - Math.cos(an) * 64); ctx.stroke();
+  ctx.restore();
+  glow(x + Math.sin(an) * 64, y - Math.cos(an) * 64, 8, O_RGB, a, 4);
+}
+function bridge(a, k) {                                                         // 天桥：桥面 + 两根桥墩
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a * k; ctx.strokeStyle = 'rgba(232,226,214,.85)'; ctx.lineWidth = 3; ctx.fillStyle = 'rgba(255,255,255,.05)';
+  ctx.beginPath(); ctx.rect(520, 860, 240, 22); ctx.fill(); ctx.stroke();
+  for (const bx of [536, 744]) { ctx.beginPath(); ctx.moveTo(bx, 882); ctx.lineTo(bx, 1022); ctx.stroke(); }
+  ctx.lineWidth = 1.6; for (let x = 530; x <= 750; x += 22) { ctx.beginPath(); ctx.moveTo(x, 860); ctx.lineTo(x, 828); ctx.stroke(); }
+  ctx.beginPath(); ctx.moveTo(520, 828); ctx.lineTo(760, 828); ctx.stroke();
+  ctx.restore();
+}
+function sceneTrolley(t) {
+  if (t > LIFT + .1) return;
+  const push = E.inExpo(prog(t, 15.0, LIFT)), fade = 1 - sstep(15.5, LIFT, t);
+  ctx.save(); ctx.translate(540, 900); ctx.scale(1 + 1.4 * push, 1 + 1.4 * push); ctx.translate(-540, -900); ctx.globalAlpha = fade;
+  if (push > .02) ctx.filter = `blur(${(push * 16).toFixed(1)}px)`;
+  // 问题：第一帧就在
+  const qOut = sstep(Q.REVEAL - .1, Q.REVEAL + .5, t);
+  typeText('电车失控，冲向 5 个人', 540, 492, { ...big, size: 50, weight: 700 }, 1, 1 - qOut);
+  typeText('你会拉下拉杆吗？', 540, 600, { ...big, size: 86, weight: 900, glow: 'rgba(255,225,190,.25)', glowBlur: 30 }, 1, 1 - qOut);
+  // 示意图：揭晓后缩小、往上收；换成天桥版
+  const up = E.io(prog(t, Q.REVEAL + .1, Q.REVEAL + .9)), sc = lerp(1, .62, up), cy = lerp(950, 690, up);
+  const pulled = E.outExpo(prog(t, Q.REVEAL, Q.REVEAL + .4)), foot = E.io(prog(t, Q.FOOT - .3, Q.FOOT + .5));
+  const beatK = [Q.c3, Q.c2, Q.c1].reduce((m, c) => Math.max(m, t >= c ? 1 - E.out(prog(t, c, c + .4)) : 0), 0);
+  ctx.save(); ctx.translate(540, cy); ctx.scale(sc, sc); ctx.translate(-540, -950);
+  rails(MAIN, 1); rails(SIDE, 1 - foot);
+  routeGlow([[200, 1040], [440, 1040], ...(pulled > .5 && foot < .5 ? SIDE.slice(1) : [[1040, 1040]])], 1, .55 * (1 - .6 * sstep(Q.FOOT, Q.FOOT + .5, t)) * (1 - up * .3), t, pulled > .5 && foot < .5 ? '242,161,74' : '229,72,77');
+  [664, 724, 784, 844, 904].forEach(x => person(x, 1033, 1.05, 1, '#d9dee7', 'rgba(255,255,255,.25)'));
+  person(830, 853, 1.05, 1 - foot, '#d9dee7', 'rgba(255,255,255,.25)');
+  trolley(lerp(150, 236, prog(t, 0, Q.FOOT + 5)), 1033, 1, t);
+  lever(440, 1124, pulled, (1 - foot) * (1 + .15 * beatK));
+  you(392, 1112, t, 1 - foot, 9);
+  bridge(1, foot);
+  if (foot > 0) {                                                                          // 桥上：一个大个子，你在他身后
+    person(650, 852, 1.45, foot, '#e8e0d0', 'rgba(255,230,200,.3)');
+    you(604, 812, t, foot, 9);
+    ctx.save(); ctx.globalAlpha = foot * .8; ctx.strokeStyle = '#e5484d'; ctx.lineWidth = 3; ctx.setLineDash([10, 10]); ctx.lineDashOffset = -t * 30;
+    ctx.beginPath(); ctx.moveTo(650, 880); ctx.lineTo(650, 1004); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = '#e5484d'; ctx.beginPath(); ctx.moveTo(638, 1000); ctx.lineTo(662, 1000); ctx.lineTo(650, 1020); ctx.fill(); ctx.restore();
+  }
+  ctx.restore();
+  // 选项
+  const oa = (1 - sstep(Q.REVEAL - .1, Q.REVEAL + .3, t));
+  pill('A · 拉下拉杆', 300, 1226, oa, { size: 30, stroke: `rgba(${O_RGB},.6)`, sc: 1 + .03 * beatK });
+  pill('B · 什么都不做', 780, 1226, oa, { size: 30, sc: 1 + .03 * beatK });
+  // 倒数 3 · 2 · 1（每两拍一个）
+  ['3', '2', '1'].forEach((s, i) => {
+    const t0 = [Q.c3, Q.c2, Q.c1][i], v = prog(t, t0, t0 + 1.28); if (v <= 0 || v >= 1) return;
+    const k = 1.5 - .5 * E.outExpo(v * 2.5), al = 1 - sstep(.62, 1, v);
+    const bg = ctx.createRadialGradient(540, 940, 0, 540, 940, 230); bg.addColorStop(0, `rgba(6,7,11,${.88 * al})`); bg.addColorStop(1, 'rgba(6,7,11,0)'); ctx.fillStyle = bg; ctx.fillRect(300, 700, 480, 480);
+    ctx.save(); ctx.translate(540, 940); ctx.scale(k, k);
+    text(s, 0, 8, { font: SERIF, size: 210, weight: 900, align: 'center', color: CREAM, alpha: al, glow: 'rgba(255,240,220,.4)', blur: 30 });
+    ctx.restore();
+  });
+  // 结果：拉拉杆 81%，推下天桥 51%（各国平均）
+  const base = 1262, unit = 4.0;
+  [[360, 81, Q.REVEAL + .3, '拉下拉杆', ORANGE], [720, 51, Q.FOOT + .5, '推下天桥', '#e5484d']].forEach(([x, v, t0, lab, col]) => {
+    const k = E.outExpo(prog(t, t0, t0 + .9)); if (k <= 0) return;
+    const h = v * unit * k;
+    ctx.save(); ctx.fillStyle = col; ctx.globalAlpha = .9; ctx.shadowColor = col; ctx.shadowBlur = 24;
+    ctx.beginPath(); ctx.roundRect(x - 74, base - h, 148, h, [10, 10, 0, 0]); ctx.fill(); ctx.restore();
+    text(`${Math.round(v * k)}%`, x, base - h - 48, { font: SERIF, size: 66, weight: 900, align: 'center', color: col });
+    text(lab, x, base + 36, { font: SANS, size: 28, weight: 700, align: 'center', color: '#c3cad6', alpha: sstep(t0, t0 + .4, t) });
+  });
+  ctx.restore();
+}
+
+// ======================================================================== ② 标题
+function sceneTitle(t) {
+  if (t < LIFT - .05 || t > 20.6) return;
+  const e = E.outExpo(prog(t, LIFT, LIFT + .9)), out = sstep(19.7, 20.4, t), sc = (1.45 - .45 * e) * (1 + .06 * out);
+  ctx.save(); ctx.translate(540, 900); ctx.scale(sc, sc); ctx.translate(-540, -900);
+  ctx.filter = e < .97 ? `blur(${((1 - e) * 18).toFixed(1)}px)` : 'none';
+  text('功利主义', 540, 900, { size: 166, weight: 900, align: 'center', ls: 30, alpha: sstep(LIFT, LIFT + .15, t) * (1 - out), glow: 'rgba(255,225,190,.25)', blur: 40 });
+  ctx.restore();
+  seriesTag(712, sstep(LIFT + .4, LIFT + 1.1, t) * (1 - out));
+  typeText('UTILITARIANISM', 540, 1046, { size: 42, weight: 600, font: LAT, ls: 20, color: DIM, align: 'center', spread: 3 }, prog(t, LIFT + .5, LIFT + 1.6), 1 - out);
+  typeText('第三季 · 主义 ⑤', 540, 1118, { size: 28, weight: 500, ls: 10, color: '#6f7786', align: 'center', spread: 4 }, prog(t, LIFT + 1.1, LIFT + 2.0), 1 - out);
+}
+
+// ======================================================================== ③ 边沁：功利 ≠ 自私；最大多数人的最大幸福；每个人都算一个
+const RING12 = Array.from({ length: 12 }, (_, i) => i * TAU / 12 - PI / 2);
+function sceneBentham(t) {
+  if (t < 19.9 || t > CALC + .3) return;
+  // 1. “很功利”：光都流向中间那一个  →  2. 反过来：光从中间流向每一个人
+  const A1 = sstep(20.0, 20.5, t) * (1 - sstep(27.3, 27.9, t)), rev = E.io(prog(t, 24.0, 25.0));
+  if (A1 > 0) {
+    const cx = 540, cy = 900, R = 300;
+    RING12.forEach((an, i) => {
+      const x = cx + Math.cos(an) * R, y = cy + Math.sin(an) * R * .82;
+      const lit = rev * sstep(24.4 + i * .06, 24.9 + i * .06, t);
+      glow(x, y, 7, lit > .02 ? '255,214,160' : '140,150,166', A1 * (.45 + .55 * lit), 4 + 2 * lit);
+      for (let k = 0; k < 3; k++) {                                                     // 流动的小光点
+        const u = ((t * .7 + i * .37 + k / 3) % 1), f = rev < .5 ? 1 - u : u;
+        glow(lerp(cx, x, f), lerp(cy, y, f), 2.4, rev < .5 ? '255,196,120' : '255,226,180', A1 * Math.sin(PI * u) * .8 * (1 - Math.abs(rev - .5) * 0 ), 3);
+      }
+    });
+    const self = 1 - rev;                                                               // 中间那个：先是吸光的“我”，后来只是普通的一个
+    glow(cx, cy, lerp(9, 22, self), O_RGB, A1, 6);
+    text('只想着自己', cx, cy + 92, { size: 34, weight: 700, align: 'center', color: '#c9b79a', alpha: A1 * sstep(20.6, 21.2, t) * (1 - sstep(23.7, 24.1, t)) });
+    text('「功利」', cx, cy - 92, { size: 60, weight: 900, align: 'center', color: '#c9b79a', alpha: A1 * sstep(20.4, 21.0, t) * (1 - sstep(23.7, 24.1, t)) });
+    text('功利主义', cx, cy - 92, { size: 60, weight: 900, align: 'center', color: ORANGE, alpha: A1 * sstep(24.2, 24.8, t), glow: `rgba(${O_RGB},.5)`, blur: 20 });
+    text('Jeremy Bentham · 1748–1832', cx, cy + 92, { font: LAT, style: 'italic', size: 34, weight: 500, align: 'center', color: DIM, alpha: A1 * sstep(24.6, 25.2, t) });
+  }
+  // 3. 最大多数人的最大幸福：一大片人，暖光一波一波扫过所有人
+  const A2 = sstep(27.6, 28.2, t) * (1 - sstep(31.2, 31.8, t));
+  if (A2 > 0) {
+    typeText('「最大多数人的最大幸福」', 540, 560, { ...big, size: 64, weight: 900, glow: `rgba(${O_RGB},.4)`, glowBlur: 30 }, prog(t, 27.8, 28.8), A2);
+    typeText('the greatest happiness of the greatest number', 540, 650, { size: 32, weight: 500, font: LAT, style: 'italic', align: 'center', color: DIM, spread: 6 }, prog(t, 28.4, 29.6), A2);
+    for (const p of CROWD) {
+      const wave = sstep(0, .3, (t - 28.6) * .9 - p.d), w = Math.max(wave, 0);
+      glow(p.x, p.y, 3.4, w > .5 ? '255,214,160' : '130,140,156', A2 * (.35 + .65 * w), 2 + 2 * w);
+    }
+  }
+  // 4. 每个人都只算一个：国王、商人、孩子、乞丐……头上都是一样的“1”
+  const A3 = sstep(31.5, 32.1, t) * (1 - sstep(CALC - .8, CALC - .1, t));
+  if (A3 > 0) {
+    const xs = [160, 290, 420, 540, 660, 790, 920], ss = [2.6, 2.3, 1.5, 2.1, 1.8, 2.5, 1.7], y = 1040;
+    xs.forEach((x, i) => {
+      const k = E.outExpo(prog(t, 31.7 + i * .12, 32.4 + i * .12)), s = ss[i], hy = y - 50 * s;
+      person(x, y, s, A3 * k, '#d9dee7');
+      ctx.save(); ctx.globalAlpha = A3 * k; ctx.fillStyle = '#e8c36a'; ctx.shadowColor = 'rgba(232,195,106,.7)'; ctx.shadowBlur = 12;
+      if (i === 0) {                                                                          // 王冠
+        const cy = hy - 10 * s - 2; ctx.beginPath(); ctx.moveTo(x - 17, cy);
+        for (const [dx, dy] of [[-19, -22], [-9, -10], [0, -26], [9, -10], [19, -22], [17, 0]]) ctx.lineTo(x + dx, cy + dy);
+        ctx.closePath(); ctx.fill();
+      }
+      ctx.shadowBlur = 0; ctx.fillStyle = '#d9dee7';
+      if (i === 5) { ctx.fillRect(x - 15, hy - 10 * s - 30, 30, 28); ctx.fillRect(x - 26, hy - 10 * s - 4, 52, 6); }      // 高礼帽
+      if (i === 3) { ctx.strokeStyle = '#b9a98c'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x + 34, y); ctx.lineTo(x + 38, y - 64); ctx.stroke(); }  // 拐杖
+      ctx.restore();
+      const ok = E.outExpo(prog(t, 33.0 + i * .14, 33.5 + i * .14));
+      text('1', x, 760, { font: SERIF, size: 58, weight: 900, align: 'center', color: ORANGE, alpha: A3 * ok, glow: `rgba(${O_RGB},.6)`, blur: 16 });
+    });
+    text('国王', 160, 1092, { font: SANS, size: 26, weight: 500, align: 'center', color: '#8a93a3', alpha: A3 * sstep(32.6, 33.0, t) });
+    text('乞丐', 920, 1092, { font: SANS, size: 26, weight: 500, align: 'center', color: '#8a93a3', alpha: A3 * sstep(32.6, 33.0, t) });
+    seg(100, 1042, 980, 1042, 'rgba(236,230,218,.3)', 1.5, A3);
+  }
+}
+
+// ======================================================================== ④ 快乐计算：自体圣像、七个维度、5 > 1
+function autoIcon(t, a) {                                                        // 玻璃柜里坐着的边沁
+  if (a <= 0) return;
+  const cx = 540, top = 600, bot = 1180, w = 380;
+  ctx.save(); ctx.globalAlpha *= a;
+  ctx.fillStyle = 'rgba(70,46,28,.9)'; ctx.fillRect(cx - w / 2 - 24, bot, w + 48, 46);                    // 木头底座
+  ctx.strokeStyle = 'rgba(232,214,176,.5)'; ctx.lineWidth = 2; ctx.strokeRect(cx - w / 2 - 24, bot, w + 48, 46);
+  text('JEREMY BENTHAM', cx, bot + 24, { font: LAT, size: 22, weight: 600, align: 'center', color: '#e0c890', ls: 6 });
+  const fg = '#0d0b0a';                                                                                      // 椅子和人（剪影）
+  ctx.fillStyle = fg; ctx.strokeStyle = 'rgba(232,214,176,.55)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.rect(cx - 90, 760, 22, 330); ctx.fill(); ctx.stroke();                              // 椅背
+  ctx.beginPath(); ctx.rect(cx - 96, 960, 170, 22); ctx.fill(); ctx.stroke();                              // 椅面
+  for (const lx of [cx - 88, cx + 60]) { ctx.beginPath(); ctx.rect(lx, 982, 10, 196); ctx.fill(); ctx.stroke(); }
+  ctx.beginPath(); ctx.moveTo(cx - 60, 960); ctx.quadraticCurveTo(cx - 64, 830, cx - 10, 820); ctx.quadraticCurveTo(cx + 40, 826, cx + 34, 960); ctx.closePath(); ctx.fill(); ctx.stroke();   // 身子
+  ctx.beginPath(); ctx.moveTo(cx + 26, 950); ctx.lineTo(cx + 120, 968); ctx.lineTo(cx + 116, 1172); ctx.lineTo(cx + 96, 1172); ctx.lineTo(cx + 96, 990); ctx.lineTo(cx + 20, 984); ctx.closePath(); ctx.fill(); ctx.stroke();  // 腿
+  ctx.beginPath(); ctx.arc(cx - 6, 786, 30, 0, TAU); ctx.fill(); ctx.stroke();                              // 头
+  ctx.beginPath(); ctx.ellipse(cx - 6, 760, 52, 10, 0, 0, TAU); ctx.fill(); ctx.stroke();                   // 帽檐
+  ctx.beginPath(); ctx.moveTo(cx - 34, 760); ctx.lineTo(cx - 30, 722); ctx.lineTo(cx + 18, 722); ctx.lineTo(cx + 22, 760); ctx.closePath(); ctx.fill(); ctx.stroke();  // 帽身
+  ctx.strokeStyle = 'rgba(232,214,176,.6)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(cx + 140, 930); ctx.lineTo(cx + 150, 1176); ctx.stroke();  // 手杖
+  ctx.restore();
+  ctx.save(); ctx.globalAlpha *= a;                                                                          // 玻璃柜
+  ctx.fillStyle = 'rgba(150,190,210,.06)'; ctx.fillRect(cx - w / 2, top, w, bot - top);
+  ctx.strokeStyle = 'rgba(200,226,240,.55)'; ctx.lineWidth = 2.5; ctx.strokeRect(cx - w / 2, top, w, bot - top);
+  ctx.beginPath(); ctx.rect(cx - w / 2, top, w, bot - top); ctx.clip();
+  const sh = ((t * .12) % 1) * 1.6 - .3;                                                                     // 玻璃上划过的反光
+  for (const [d, wd, al] of [[0, 70, .10], [110, 22, .14]]) {
+    const x0 = cx - w / 2 + sh * w + d; ctx.fillStyle = `rgba(230,244,255,${al})`;
+    ctx.beginPath(); ctx.moveTo(x0, top); ctx.lineTo(x0 + wd, top); ctx.lineTo(x0 + wd - 220, bot); ctx.lineTo(x0 - 220, bot); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
+const FACTORS = [['强度', 'intensity'], ['持续', 'duration'], ['确定', 'certainty'], ['快慢', 'propinquity'], ['后续', 'fecundity'], ['纯度', 'purity'], ['人数', 'extent']];
+function sceneCalc(t) {
+  if (t < CALC - .9 || t > ALARM + .3) return;
+  const A1 = sstep(CALC - .3, CALC + .3, t) * (1 - sstep(44.7, 45.3, t));
+  if (A1 > 0) {
+    const zoom = 1 + .06 * E.io(prog(t, CALC, 44.8));
+    ctx.save(); ctx.translate(540, 900); ctx.scale(zoom, zoom); ctx.translate(-540, -900); autoIcon(t, A1); ctx.restore();
+  }
+  // 七个维度的“快乐计算器”：每两拍点亮一格
+  const A2 = sstep(45.0, 45.5, t) * (1 - sstep(48.7, 49.3, t));
+  if (A2 > 0) {
+    FACTORS.forEach(([zh, en], i) => {
+      const y = 620 + i * 84, k = E.outExpo(prog(t, 45.2 + i * .28, 45.8 + i * .28)), fill = E.outExpo(prog(t, 45.6 + i * .3, 46.6 + i * .3)) * (.45 + .5 * ((i * 37) % 10) / 10);
+      text(zh, 150, y, { size: 40, weight: 700, color: CREAM, alpha: A2 * k });
+      text(en, 150, y + 34, { font: LAT, style: 'italic', size: 22, weight: 500, color: DIM, alpha: A2 * k });
+      ctx.save(); ctx.globalAlpha = A2 * k; ctx.strokeStyle = 'rgba(236,230,218,.35)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.roundRect(300, y - 14, 620, 28, 14); ctx.stroke();
+      ctx.fillStyle = TEAL; ctx.shadowColor = `rgba(${T_RGB},.6)`; ctx.shadowBlur = 14; ctx.beginPath(); ctx.roundRect(304, y - 10, 612 * fill, 20, 10); ctx.fill(); ctx.restore();
+    });
+  }
+  // 5 > 1
+  const A3 = sstep(49.0, 49.5, t) * (1 - sstep(ALARM - .6, ALARM, t));
+  if (A3 > 0) {
+    const k = E.outExpo(prog(t, 49.1, 49.9));
+    text('5', 330, 880, { font: SERIF, size: 240, weight: 900, align: 'center', color: TEAL, alpha: A3 * k, glow: `rgba(${T_RGB},.5)`, blur: 30 });
+    text('>', 540, 870, { font: SERIF, size: 150, weight: 700, align: 'center', color: CREAM, alpha: A3 * sstep(49.5, 49.9, t) });
+    text('1', 750, 880, { font: SERIF, size: 240, weight: 900, align: 'center', color: CREAM, alpha: A3 * k });
+    [0, 1, 2, 3, 4].forEach(i => person(250 + i * 40, 1120, .95, A3 * sstep(49.8 + i * .08, 50.1 + i * .08, t), '#9fe6dc'));
+    person(750, 1120, .95, A3 * sstep(50.2, 50.5, t), '#d9dee7');
+    text('5 个人的幸福', 330, 1170, { font: SANS, size: 26, weight: 500, align: 'center', color: '#9aa3b2', alpha: A3 * sstep(50.0, 50.5, t) });
+    text('1 个人的幸福', 750, 1170, { font: SANS, size: 26, weight: 500, align: 'center', color: '#9aa3b2', alpha: A3 * sstep(50.2, 50.7, t) });
+  }
+}
+
+// ======================================================================== ⑤ 心的警报：两个“扫描”面板（示意）
+const HOT = Array.from({ length: 14 }, (_, i) => { const r = mulberry(1900 + i); return { a: r() * TAU, d: Math.sqrt(r()) * .78, s: .18 + r() * .22, ph: r() * TAU }; });
+function scan(cx, cy, R, heat, rgb, t, a, label) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a;
+  ctx.fillStyle = 'rgba(255,255,255,.03)'; ctx.strokeStyle = 'rgba(236,230,218,.45)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.ellipse(cx, cy, R, R * 1.1, 0, 0, TAU); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(cx, cy, R, R * 1.1, 0, 0, TAU); ctx.clip();
+  ctx.strokeStyle = 'rgba(236,230,218,.08)'; ctx.lineWidth = 1;
+  for (let k = -R; k <= R; k += 26) { ctx.beginPath(); ctx.moveTo(cx + k, cy - R * 1.1); ctx.lineTo(cx + k, cy + R * 1.1); ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx - R, cy + k); ctx.lineTo(cx + R, cy + k); ctx.stroke(); }
+  ctx.globalCompositeOperation = 'lighter';
+  HOT.forEach((h, i) => {
+    const on = clamp(heat * 1.4 - i / HOT.length * .9), x = cx + Math.cos(h.a) * h.d * R, y = cy + Math.sin(h.a) * h.d * R * 1.1, r = h.s * R * (.8 + .2 * Math.sin(t * 3 + h.ph));
+    if (on <= 0) return;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, `rgba(${rgb},${.55 * on})`); g.addColorStop(1, `rgba(${rgb},0)`);
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+  });
+  ctx.restore();
+  text(label, cx, cy - R * 1.1 - 46, { size: 40, weight: 900, align: 'center', color: CREAM, alpha: a });
+}
+function sceneAlarm(t) {
+  if (t < ALARM - .4 || t > NUMB + .2) return;
+  const A = sstep(ALARM - .1, ALARM + .5, t) * (1 - sstep(NUMB - .8, NUMB - .1, t));
+  if (A <= 0) return;
+  const heatL = .25 * sstep(ALARM + .4, ALARM + 1.6, t), heatR = sstep(54.6, 57.0, t) * (.85 + .15 * Math.sin(t * 7));
+  scan(300, 900, 200, heatL, T_RGB, t, A, '拉下拉杆');
+  scan(780, 900, 200, heatR, '229,90,70', t, A, '推下天桥');
+  text('和情绪有关的脑区 · 示意', 540, 1180, { font: SANS, size: 24, weight: 500, align: 'center', color: '#6f7786', alpha: A * sstep(54.4, 55, t) });
+  for (let k = 0; k < 6; k++) {                                                    // 警报：一圈圈红色往外扩
+    const u = prog(t, 57.9 + k * BEAT * 2, 57.9 + k * BEAT * 2 + 1.6); if (u <= 0 || u >= 1) continue;
+    ctx.save(); ctx.globalAlpha = A * (1 - u) * .7; ctx.strokeStyle = '#e5484d'; ctx.lineWidth = 3; ctx.shadowColor = 'rgba(229,72,77,.8)'; ctx.shadowBlur = 16;
+    ctx.beginPath(); ctx.ellipse(780, 900, 200 + 180 * E.out(u), (200 + 180 * E.out(u)) * 1.1, 0, 0, TAU); ctx.stroke(); ctx.restore();
+  }
+  const wa = A * sstep(58.4, 59.0, t);
+  if (wa > 0) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; const g = ctx.createRadialGradient(780, 900, 0, 780, 900, 700); g.addColorStop(0, `rgba(229,72,77,${.12 * wa * (.7 + .3 * Math.sin(t * 7))})`); g.addColorStop(1, 'rgba(229,72,77,0)'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); ctx.restore(); }
+}
+
+// ======================================================================== ⑥ 数字面前：2000 只鸟和 20 万只鸟，价钱几乎一样
+function bird(x, y, s, ph, t) {
+  const f = Math.sin(t * 9 + ph) * 4 * s;
+  ctx.moveTo(x - 9 * s, y - 2 * s + f * .3); ctx.quadraticCurveTo(x - 4 * s, y - 5 * s - f, x, y); ctx.quadraticCurveTo(x + 4 * s, y - 5 * s - f, x + 9 * s, y - 2 * s + f * .3);
+}
+const BIRD_T = [BT(102), BT(109.5)];                                               // 2,000 → 200,000（中间 20,000 只的那组写在 README 里）
+function sceneBirds(t) {
+  if (t < NUMB - .2 || t > CLIMAX + .3) return;
+  const A = sstep(NUMB + .3, NUMB + 1.2, t) * (1 - sstep(CLIMAX - .7, CLIMAX - .05, t));
+  if (A <= 0) return;
+  const stage = BIRD_T.reduce((m, b, i) => t >= b ? i : m, -1);
+  const n = stage < 0 ? 0 : stage === 0 ? 60 : FLOCK.length, cmpDim = 1 - .5 * sstep(76.2, 76.8, t);
+  ctx.save(); ctx.strokeStyle = 'rgba(236,230,218,.85)'; ctx.lineWidth = 1.6; ctx.lineCap = 'round';
+  const solo = stage < 0 ? sstep(NUMB + .6, NUMB + 1.4, t) : 0;
+  if (solo > 0) { ctx.globalAlpha = A * solo; ctx.lineWidth = 3; ctx.beginPath(); bird(540 + Math.sin(t * .7) * 30, 860 + Math.sin(t * 1.1) * 12, 4, 0, t); ctx.stroke(); }
+  ctx.lineWidth = 1.6;
+  for (let i = 0; i < Math.min(n, FLOCK.length); i++) {
+    const b = FLOCK[i], born = BIRD_T[i < 60 ? 0 : 1], k = sstep(born + b.d * 1.2, born + b.d * 1.2 + .4, t); if (k <= 0) continue;
+    const x = b.x + Math.sin(t * .5 + b.ph) * 12 + (t - born) * 6 * b.z, y = b.y + Math.sin(t * .8 + b.ph * 2) * 6;
+    ctx.globalAlpha = A * k * cmpDim * (i < 60 ? 1 : i < 300 ? .85 : .55);
+    ctx.beginPath(); bird(x, y, i < 60 ? 1.6 : i < 300 ? 1.1 : .7, b.ph, t); ctx.stroke();
+  }
+  ctx.restore();
+  // 数量和价钱
+  const labels = [['2,000 只', '$80'], ['200,000 只', '$88']];
+  labels.forEach(([cnt, usd], i) => {
+    const t0 = BIRD_T[i], t1 = i < 1 ? BIRD_T[i + 1] : CLIMAX - .7, a = A * sstep(t0 + .1, t0 + .5, t) * (1 - sstep(t1 - .1, t1 + .2, t)); if (a <= 0) return;
+    const e = E.outExpo(prog(t, t0 + .1, t0 + .8));
+    ctx.save(); ctx.fillStyle = 'rgba(8,9,14,.75)'; ctx.globalAlpha = a; ctx.beginPath(); ctx.roundRect(540 - 260, 1060, 520, 190, 30); ctx.fill(); ctx.restore();
+    text(cnt, 540, 1104, { font: SANS, size: 34, weight: 700, align: 'center', color: '#c3cad6', alpha: a });
+    text(usd, 540, 1190, { font: SERIF, size: 110, weight: 900, align: 'center', color: ORANGE, alpha: a * e, glow: `rgba(${O_RGB},.5)`, blur: 24 });
+  });
+  const cmp = A * sstep(76.3, 76.9, t);
+  if (cmp > 0) {
+    text('鸟 × 100', 300, 600, { font: SERIF, size: 60, weight: 900, align: 'center', color: CREAM, alpha: cmp, glow: 'rgba(0,0,0,.95)', blur: 22 });
+    text('钱 × 1.1', 780, 600, { font: SERIF, size: 60, weight: 900, align: 'center', color: ORANGE, alpha: cmp * sstep(76.7, 77.3, t), glow: 'rgba(0,0,0,.95)', blur: 22 });
+  }
+}
+
+// ======================================================================== ⑦ 都算一个：圈子一圈圈画大
+const RC = [540, 1080];
+function sceneCircle(t) {
+  if (t < CLIMAX - .1) return;
+  const A = sstep(CLIMAX - .1, CLIMAX + .2, t);
+  const fl = 1 - prog(t, CLIMAX, CLIMAX + .6);
+  if (fl > 0) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = `rgba(255,214,170,${.38 * fl * fl})`; ctx.fillRect(0, 0, W, H); ctx.restore(); }
+  const fl2 = 1 - prog(t, FINAL, FINAL + .7);
+  if (t > FINAL && fl2 > 0) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = `rgba(255,226,190,${.32 * fl2 * fl2})`; ctx.fillRect(0, 0, W, H); ctx.restore(); }
+  const dimK = 1 - .4 * win(t, 93.0, FINAL + .2, .6, .3);
+  warmth(A * (1.1 + .5 * sstep(FINAL, FINAL + 1.5, t)), RC[0], RC[1], 820);
+  // 圈外：你永远见不到的人
+  const far = sstep(86.6, 88.6, t) * A * dimK;
+  if (far > 0) for (const p of FAR) {
+    const k = sstep(86.6 + p.d * 1.6, 87.2 + p.d * 1.6, t);
+    glow(p.x, p.y, p.s, '255,214,160', far * k * (.35 + .3 * Math.sin(t * 1.5 + p.d * 9)), 2.5);
+  }
+  RINGS.forEach((rg, k) => {
+    const e = E.outExpo(prog(t, CLIMAX + .3 + k * 1.15, CLIMAX + 1.6 + k * 1.15)); if (e <= 0) return;
+    const r = rg.r * e;
+    ctx.save(); ctx.globalAlpha = A * dimK * (.5 + .3 * e); ctx.strokeStyle = 'rgba(255,214,160,.55)'; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.ellipse(RC[0], RC[1], r, r * .8, 0, 0, TAU); ctx.stroke(); ctx.restore();
+    for (let i = 0; i < rg.n; i++) {
+      const an = i * TAU / rg.n + k * .4 + t * .03 * (k % 2 ? -1 : 1);
+      glow(RC[0] + Math.cos(an) * r, RC[1] + Math.sin(an) * r * .8, 4.4 - k * .5, '255,214,160', A * dimK * e * (.75 + .25 * Math.sin(t * 2 + i)), 4);
+    }
+    text(rg.label, RC[0], RC[1] - r * .8 - 2, { size: 24, weight: 700, align: 'center', color: '#ffd8a8', alpha: A * dimK * sstep(.6, 1, e) * (1 - sstep(92.6, 93.2, t)), glow: 'rgba(0,0,0,.95)', blur: 14 });
+  });
+  you(RC[0], RC[1], t, A, 11);
+  // 字
+  const qa = 1 - sstep(92.7, 93.3, t);
+  typeText('把圈子，画得更大。', 540, 600, { ...big, size: 80, weight: 900, glow: `rgba(${O_RGB},.4)`, glowBlur: 30 }, prog(t, CLIMAX + .3, CLIMAX + 1.3), qa);
+  typeText('在它的账本上，', 540, 556, { ...big, size: 46, weight: 700 }, prog(t, 93.4, 94.4), 1);
+  typeText('「每个人，都算一个。」', 540, 682, { ...big, size: 96, weight: 900, glow: `rgba(${O_RGB},.5)`, glowBlur: 40 }, prog(t, FINAL, FINAL + .9), 1);
+  typeText('—— 边沁', 540, 794, { size: 26, weight: 500, font: SANS, align: 'center', color: DIM, ls: 4, spread: 5 }, prog(t, FINAL + 1.0, FINAL + 1.6), 1);
+}
+
+// ======================================================================== 世界层
+function WORLD(t) {
+  space();
+  starfield(t, STAR_A(t));
+  sceneTrolley(t); sceneTitle(t); sceneBentham(t); sceneCalc(t); sceneAlarm(t); sceneBirds(t); sceneCircle(t);
+}
+function SAMPLES(T) {
+  if ((T > 7.9 && T < 9.2) || (T > 10.4 && T < 11.4) || (T > 14.8 && T < LIFT + 1.2) || (T > 23.9 && T < 25.2)) return 4;
+  if ((T > CLIMAX - .2 && T < CLIMAX + 1.4) || (T > FINAL - .2 && T < FINAL + 1.2)) return 5;
+  return 3;
+}
+function BLOOM_K(T) { return .42 + .18 * win(T, LIFT, LIFT + 4, .2, .8) + .1 * win(T, ALARM, NUMB, .5, .5) + .22 * win(T, CLIMAX, TOTAL, .2, 1) + .12 * win(T, FINAL, TOTAL, .2, 1); }
+function OVER(T) {
+  stamp('2020', 'Awad et al. · PNAS', 8.2, 15.6, T);
+  stamp('1776', 'Bentham · A Fragment on Government', 27.7, 31.3, T);
+  stamp('1832 –', 'Auto-icon · University College London', 40.9, 44.8, T);
+  stamp('1789', 'Bentham · Principles of Morals and Legislation', 45.1, 48.8, T);
+  stamp('2001', 'Greene et al. · Science', 53.6, 63.4, T);
+  stamp('1993', 'Desvousges et al.', 67.9, 79.6, T);
+}
+function MASTER(T) { return 1; }
+function INIT() {
+  const r = mulberry(18);
+  STARS = Array.from({ length: 700 }, () => { const b = Math.pow(r(), 3); return { x: r() * W, y: r() * H, z: .35 + r() * .65, b: .22 + .78 * b, s: .8 + 2.0 * b, tw: .6 + r() * 2.2, ph: r() * TAU, warm: r() < .2 }; });
+  const rc = mulberry(180);
+  CROWD = [];
+  for (let j = 0; j < 14; j++) for (let i = 0; i < 22; i++) {
+    const x = 110 + i * 40 + (rc() - .5) * 14, y = 760 + j * 34 + (rc() - .5) * 12;
+    CROWD.push({ x, y, d: Math.hypot(x - 540, y - 990) / 700 + rc() * .08 });
+  }
+  const rb = mulberry(181);
+  FLOCK = Array.from({ length: 1500 }, (_, i) => {
+    const R = i < 60 ? 170 : i < 300 ? 330 : 520, a = rb() * TAU, d = Math.sqrt(rb()) * R;
+    return { x: 540 + Math.cos(a) * d * 1.2, y: 820 + Math.sin(a) * d * .62, ph: rb() * TAU, z: .5 + rb(), d: rb() };
+  });
+  RINGS = [{ r: 80, n: 5, label: '家人' }, { r: 150, n: 9, label: '朋友' }, { r: 232, n: 15, label: '陌生人' }, { r: 320, n: 24, label: '远方的人' }];
+  const rf = mulberry(182);
+  FAR = [];
+  while (FAR.length < 240) {                                                     // 圈外：你永远见不到的人
+    const x = 60 + rf() * 960, y = 840 + rf() * 520;
+    if (Math.hypot(x - RC[0], (y - RC[1]) / .8) < 350 || (x > 940 && y > 1000)) continue;
+    FAR.push({ x, y, s: 1.6 + rf() * 1.6, d: rf() });
+  }
+}
+
+// ======================================================================== 音效提示表（音高都在 C 小调里，最后一个和弦是 C 大调）
+const NOTE = { C5: 523.25, Eb5: 622.25, E5: 659.26, F5: 698.46, G5: 783.99, Ab5: 830.61, Bb5: 932.33, C6: 1046.5, Eb6: 1244.51, E6: 1318.51, G6: 1567.98, C7: 2093.0, Eb7: 2489.02, E7: 2637.02, G7: 3135.96 };
+const CM_SHIM = [NOTE.Eb6, NOTE.G6, NOTE.C6, NOTE.C7, NOTE.Eb7], CMAJ_SHIM = [NOTE.E6, NOTE.G6, NOTE.C6, NOTE.C7, NOTE.E7], CM_SWELL = [130.81, 196.0, 261.63, 311.13, 392.0];
+function CUES() {
+  const c = [];
+  c.push([0.02, 'shimmer', { f: CM_SHIM, gain: .18 }]);
+  [Q.c3, Q.c2, Q.c1].forEach(t => c.push([t, 'tick', { gain: .55 }]));
+  c.push([Q.REVEAL, 'thunk', { gain: .45 }], [Q.REVEAL + .3, 'bar', { f0: 262, f1: 784, gain: .5, pan: -.3 }]);
+  c.push([Q.FOOT - .3, 'whoosh', { dur: .7, gain: .26 }], [Q.FOOT + .5, 'bar', { f0: 262, f1: 523, gain: .5, pan: .3 }]);
+  c.push([LIFT - 1.33, 'riser', { dur: 1.33, gain: .38 }], [LIFT, 'boom', { gain: .55 }], [LIFT, 'whoosh', { dur: .9, gain: .32 }], [LIFT + .1, 'shimmer', { f: CM_SHIM, gain: .28 }]);
+  c.push([20.1, 'suck', { dur: 1.6, gain: .22 }], [24.0, 'swish', { dur: 1.0, gain: .28 }], [24.4, 'shimmer', { f: CM_SHIM, gain: .22 }]);
+  c.push([28.6, 'swell', { dur: 2.4, f: CM_SWELL, gain: .2 }]);
+  for (let i = 0; i < 7; i++) c.push([33.0 + i * .14, 'tink', { f: [NOTE.C6, NOTE.Eb6, NOTE.G5, NOTE.C6, NOTE.Bb5, NOTE.G5, NOTE.C6][i], gain: .12 }]);
+  c.push([CALC, 'whoosh', { dur: .5, gain: .25 }], [40.9, 'creak', { dur: 1.6, gain: .16 }]);
+  for (let i = 0; i < 7; i++) c.push([45.6 + i * .3, 'click', { gain: .3 }]);
+  c.push([49.1, 'thunk', { gain: .4 }]);
+  c.push([ALARM, 'whoosh', { dur: .5, gain: .22 }], [54.6, 'drone', { dur: 2.6, gain: .14 }]);
+  for (let k = 0; k < 6; k++) c.push([57.9 + k * BEAT * 2, 'tick', { gain: .22 }]);
+  c.push([NUMB + .6, 'wind', { dur: 3.4, gain: .14 }]);
+  BIRD_T.forEach((t, i) => c.push([t, 'dust', { dur: 1.4 + i * 1.2, gain: .12 + .1 * i }], [t + .1, 'tink', { f: [NOTE.Eb6, NOTE.G5][i], gain: .14 }]));
+  c.push([76.6, 'swell', { dur: CLIMAX - 76.6, f: CM_SWELL, gain: .28 }]);
+  c.push([CLIMAX, 'boom', { gain: .6 }], [CLIMAX, 'shimmer', { f: CM_SHIM, gain: .42 }]);
+  for (let k = 0; k < 4; k++) c.push([CLIMAX + .3 + k * 1.15, 'tink', { f: [NOTE.C6, NOTE.Eb6, NOTE.G6, NOTE.C7][k], gain: .12 }]);
+  c.push([FINAL - 2.6, 'revcym', { dur: 2.6, gain: .28 }], [FINAL, 'boom', { gain: .5 }], [FINAL, 'shimmer', { f: CMAJ_SHIM, gain: .45 }], [FINAL + .1, 'chord', { f: [NOTE.C5, NOTE.E5, NOTE.G5], gain: .2 }]);
+  return c.sort((a, b) => a[0] - b[0]);
+}
+
+// ======================================================================== 字体、播放与导出接口
+let fontsReady = false;
+Promise.all([['900', SERIF], ['700', SERIF], ['500', SERIF], ['700', SANS], ['500', SANS], ['italic 500', LAT], ['italic 600', LAT], ['600', LAT]]
+  .map(([w, f]) => document.fonts.load(`${w} 40px ${f}`, '功利主义 Aa')))
+  .then(() => document.fonts.ready).then(() => { INIT(); fontsReady = true; render(0); });
+window.__ready = () => fontsReady;
+window.__frame = (t, q = .95) => { render(t); return cv.toDataURL('image/jpeg', q); };
+window.__duration = () => TOTAL;
+window.__cues = () => ({ total: TOTAL, cues: typeof CUES === 'function' ? CUES() : CUES, sections: SECTIONS.map(([name, t0, t1]) => ({ name, t0, t1 })) });
+
+if (!EXPORT) {
+  const au = new Audio('audio.wav');
+  let playing = false, clock0 = 0, pausedAt = 0, useAudio = true;
+  const now = () => useAudio && !au.paused ? au.currentTime : playing ? (performance.now() - clock0) / 1000 : pausedAt;
+  function loop() { if (!playing) return; const T = now(); render(T); if (T >= TOTAL) { playing = false; pausedAt = 0; au.pause(); return; } requestAnimationFrame(loop); }
+  function play() { playing = true; clock0 = performance.now() - pausedAt * 1000; au.currentTime = pausedAt; au.play().catch(() => { useAudio = false; }); requestAnimationFrame(loop); }
+  function pause() { pausedAt = now(); playing = false; au.pause(); }
+  document.getElementById('stage').onclick = () => playing ? pause() : play();
+  addEventListener('keydown', e => {
+    if (e.code === 'Space') { e.preventDefault(); playing ? pause() : play(); }
+    if (e.code === 'ArrowRight' || e.code === 'ArrowLeft') { const t = clamp(now() + (e.code === 'ArrowRight' ? 5 : -5), 0, TOTAL); pausedAt = t; clock0 = performance.now() - t * 1000; au.currentTime = t; if (!playing) render(t); }
+  });
+} else document.getElementById('hint').remove();
+</script>
+</body>
+</html>
