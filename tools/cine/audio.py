@@ -88,7 +88,7 @@ def synth(kind, o):
     if kind == 'air':
         d = o.get('dur', 6); n = int(d * SR); p = np.linspace(0, 1, n)
         x = sweep_noise(d, 1600, 180, lambda p: np.sin(np.pi * p) ** 1.3) * .5
-        x += .25 * np.sin(2 * np.pi * 87.3 * np.arange(n) / SR) * np.sin(np.pi * p) ** 2      # 低音 F 的嗡鸣
+        x += .25 * np.sin(2 * np.pi * o.get('hum', 87.3) * np.arange(n) / SR) * np.sin(np.pi * p) ** 2   # 低音嗡鸣（默认 F，可按这一期的调换）
         return pan(x, np.sin(p * 3) * .4) * g
     if kind == 'riser':
         d = o.get('dur', 1.2); n = int(d * SR); p = np.linspace(0, 1, n)
@@ -101,11 +101,12 @@ def synth(kind, o):
     if kind == 'swell':
         d = o.get('dur', 2); n = int((d + 1.6) * SR); t = np.arange(n) / SR
         e = np.where(t < d, (t / d) ** 2, np.exp(-(t - d) / .6))
-        x = sum(np.sin(2 * np.pi * f * t + i) * a for i, (f, a) in enumerate([(174.61, .5), (261.63, .35), (349.23, .3), (415.3, .22), (523.25, .12)]))
+        fs = o.get('f', [174.61, 261.63, 349.23, 415.3, 523.25])                    # 默认 F 小调；配乐换调时传 f
+        x = sum(np.sin(2 * np.pi * f * t + i) * a for i, (f, a) in enumerate(zip(fs, [.5, .35, .3, .22, .12])))
         return pan(lp(x, 2400) * e * .45, 0) * g
     if kind == 'shimmer':
         n = int(3.2 * SR); t = np.arange(n) / SR; x = np.zeros(n)
-        for i, f in enumerate([1396.9, 2093.0, 1661.2, 2489.0, 2793.8]):
+        for i, f in enumerate(o.get('f', [1396.9, 2093.0, 1661.2, 2489.0, 2793.8])):
             x += np.sin(2 * np.pi * f * t * (1 + .002 * np.sin(2 * np.pi * (4 + i) * t)) + i) * np.exp(-t / (1.2 + .3 * i)) * (.5 if i else .7)
         x *= ramp(n, .04) * .3
         return np.stack([x, np.roll(x, 240)], 1) * g
@@ -218,7 +219,13 @@ import wave
 with wave.open(tmp, 'wb') as w:
     w.setnchannels(2); w.setsampwidth(2); w.setframerate(SR)
     w.writeframes((np.clip(mix, -1, 1) * 32767).astype('<i2').tobytes())
-subprocess.run(['ffmpeg', '-loglevel', 'error', '-y', '-i', tmp, '-af', 'loudnorm=I=-14:TP=-1.5:LRA=11', '-ar', '48000', os.path.join(ep, 'audio.wav')], check=True)
+# 响度：先量整段的积分响度，再用一个固定增益拉到 -14 LUFS，前瞻限幅器只压峰值。
+# 不用单遍 loudnorm：它是动态的，会像自动增益一样把配乐写好的起伏（安静的段落、最后的高潮）抹平。
+import re
+meas = subprocess.run(['ffmpeg', '-hide_banner', '-i', tmp, '-af', 'ebur128=peak=true', '-f', 'null', '-'], capture_output=True, text=True).stderr
+gain = -14.0 - float(re.findall(r'I:\s+(-?[\d.]+) LUFS', meas)[-1])
+subprocess.run(['ffmpeg', '-loglevel', 'error', '-y', '-i', tmp, '-af', f'volume={gain:.2f}dB,alimiter=limit=0.84:attack=4:release=60:level=disabled',
+                '-ar', '48000', os.path.join(ep, 'audio.wav')], check=True)
 os.remove(tmp)
 m_rms = 20 * np.log10(np.sqrt((music ** 2).mean()) + 1e-9); s_rms = 20 * np.log10(np.sqrt((sfx ** 2).mean()) * .55 + 1e-9)
 print(f"wrote {os.path.join(ep, 'audio.wav')}  ({TOTAL:.2f}s, music {m_rms:.1f} dB RMS, sfx {s_rms:.1f} dB RMS, {len(cues['cues'])} cues)")
