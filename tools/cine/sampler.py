@@ -67,11 +67,10 @@ class Instrument:
         vel = float(np.clip(vel, 0, 1))
         atk = self.attack if attack is None else attack
         rel = self.release if release is None else release
-        # pick the two layers around the velocity and blend
+        # 只用最接近的一个力度层（两层录音相加会互相抵消、音色发虚），层内再按力度微调音量
         vs = [v for v, _ in self.layers]
-        j = int(np.searchsorted(vs, vel))
-        pair = [(self.layers[min(j, len(vs) - 1)], 1.0)] if j in (0, len(vs)) else \
-            [(self.layers[j - 1], (vs[j] - vel) / (vs[j] - vs[j - 1])), (self.layers[j], (vel - vs[j - 1]) / (vs[j] - vs[j - 1]))]
+        j = int(np.argmin([abs(v - vel) for v in vs]))
+        pair = [(self.layers[j], float(np.clip((vel / vs[j]) ** .6, .55, 1.35)) if len(vs) > 1 else 1.0)]
         n_hold, n_rel = int(dur * SR), int(rel * SR)
         out = np.zeros((n_hold + n_rel, 2))
         for (lv, layer), w in pair:
@@ -198,7 +197,12 @@ class Song:
         mix = _soft_limit(mix)
         tmp = path + '.raw.wav'
         _write(tmp, mix)
-        subprocess.run(['ffmpeg', '-loglevel', 'error', '-y', '-i', tmp, '-af', f'loudnorm=I={lufs}:TP=-1.5:LRA=11', '-ar', str(SR), path], check=True)
+        # 响度用一次性的静态增益，再用前瞻限幅器压住峰值；不用单遍 loudnorm（它会像自动增益一样把起伏抹平）
+        meas = subprocess.run(['ffmpeg', '-hide_banner', '-i', tmp, '-af', 'ebur128=peak=true', '-f', 'null', '-'], capture_output=True, text=True).stderr
+        I = float(re.findall(r'I:\s+(-?[\d.]+) LUFS', meas)[-1])
+        gain = lufs - I
+        subprocess.run(['ffmpeg', '-loglevel', 'error', '-y', '-i', tmp, '-af',
+                        f'volume={gain:.2f}dB,alimiter=limit=0.84:attack=4:release=60:level=disabled', '-ar', str(SR), path], check=True)
         os.remove(tmp)
         return path
 
