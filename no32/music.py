@@ -2,7 +2,7 @@
 
     python3 music.py        -> bgm.wav (104 s, never silent, -14 LUFS)
 
-Same cinematic language as No.17–31 but its own material (No.15 was also in C minor; nothing else is shared). The
+Same cinematic language as No.17–31 but its own material (No.18 was also in C minor; nothing else is shared). The
 episode asks "it's a fake pill -- does it still work?", so the high motif asks twice: a repeated note that sinks a
 third, then an answer that climbs. Bars of 4 beats = 2.667 s:
   beats   0– 24  ( 0.0–16.0 s)  安慰剂     intro: 8ths over a C pedal + the asking motif, pickup swell into the lift
