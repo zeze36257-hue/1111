@@ -17,6 +17,7 @@ cp -n "$ROOT/tools/export.cjs" "$ROOT/tools/fetch_fonts.py" "$EP/" 2>/dev/null |
 (cd "$EP" && python3 fetch_fonts.py >/dev/null && node export.cjs --cues cues.json >/dev/null)
 if [ -f "$EP/music.py" ]; then python3 "$EP/music.py"; fi                 # 这一期自己写的原创配乐 -> bgm.wav
 python3 "$ROOT/tools/cine/audio.py" "$EP"
+python3 "$ROOT/tools/cine/voice_script.py" "$EP"                       # 配音稿.txt（成片时间）
 (cd "$EP" && node export.cjs --workers 4 --audio audio.wav --out body.mp4 | tail -1)
 
 # 片尾：写入下期预告，更新字体子集，导出
