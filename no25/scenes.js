@@ -1,0 +1,375 @@
+// ======================================================================== No.25 本质主义：你真的是 i 人吗？
+// 第四季·你身上的主义 ②。开头是一段“你的性格分析”：像不像你？给它打几分？（Forer, 1949：39 个学生平均 4.26/5，拿到的却是同一段话）
+// 音乐：原创配乐（music.py，升 F 小调 90 BPM），从第 0 秒放到最后一秒，不剪不断。开头像算命师洗牌：和弦音被打乱顺序发出来。
+// 画面的每个段落都落在配乐的小节线上（1 小节 = 2.667 秒）：
+//   16.0 标题 · 37.33 i 人 e 人（每拍一个鼓点） · 53.33 本质主义（紧张） · 64.0 你在变（只剩钢琴） · 80.0 高潮 · 96.0 升 F 大调
+const BEAT = 60 / 90, BAR = BEAT * 4, BT = n => n * BEAT;
+const LIFT = BT(24), IE = BT(56), ESS = BT(80), GROW = BT(96), CLIMAX = BT(120), FINAL = BT(144), TOTAL = BT(156);
+const SECTIONS = [['性格测试', 0, LIFT], ['巴纳姆效应', LIFT, IE], ['i 人 e 人', IE, ESS], ['本质主义', ESS, GROW], ['你在变', GROW, CLIMAX], ['包罗万象', CLIMAX, TOTAL]];
+const SERIES = '黑猫不说话 · 心理学 No.25';
+const Q = { c3: BT(6), c2: BT(8), c1: BT(10), REVEAL: BT(12), TIMES: BT(16) };
+
+const LINES = [
+  [0.15, 3.9, '这是一段性格分析。读一读，像不像你？'],
+  [4.1, 7.6, '从 0 到 5，你给它打几分？先打一个。'],
+  [8.2, 10.4, '39 个学生，平均打了 4.26 分。'],
+  [10.8, 13.3, '可每个人拿到的，都是同一段话。'],
+  [13.6, 15.7, '它抄自一本星座书。'],
+  [16.3, 19.6, '这叫「巴纳姆效应」：说谁都对的话，听起来像只在说你。'],
+  [19.9, 23.7, '星座、塔罗、MBTI，都让人觉得「太准了」。'],
+  [24.0, 27.4, '可「i人」和「e人」，真的是两种人吗？'],
+  [27.7, 31.3, '大多数人的外向程度，其实都挤在中间。'],
+  [31.6, 35.3, 'MBTI 却从中间一刀切开，只给你两个答案。'],
+  [37.6, 40.6, '站在中间的人，隔几周再测一次，'],
+  [40.9, 44.6, '字母就可能翻过来。'],
+  [44.9, 48.6, '研究发现：隔四五周重测，三到五成的人类型会变。'],
+  [48.9, 52.9, '不是你变了，是那条线，正好画在人最多的地方。'],
+  [53.6, 57.6, '哲学上有个词，叫「本质主义」：'],
+  [57.9, 63.4, '相信每个人，都有一个固定不变的「本质」。'],
+  [64.3, 67.6, '于是我们常说：我就是这样的人。'],
+  [67.9, 71.9, '可一项研究，汇总了 92 组长期追踪数据：'],
+  [72.2, 75.9, '20 到 40 岁，人会变得更负责、更稳定、更有主见。'],
+  [76.3, 79.6, '诗人惠特曼写过：'],
+  [84.9, 88.6, '你不是四个字母，'],
+  [88.9, 92.6, '你是一个还在长大的人。'],
+  [98.4, 103.0, '评论区：你测过几次 MBTI？结果变过吗？'],
+];
+const BIGLINES = [
+  [80.2, 92.6, '「我辽阔广大，我包罗万象。」—— 惠特曼《自我之歌》'],
+  [93.4, 98.0, '测试可以拿来聊天，别把它当成命运。'],
+];
+
+// ======================================================================== 共用
+function space() {
+  const g = ctx.createRadialGradient(540, 820, 80, 540, 820, 1500);
+  g.addColorStop(0, '#12141c'); g.addColorStop(.55, '#08090f'); g.addColorStop(1, '#020305');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
+let STARS = [];
+function starfield(t, A) {
+  if (A <= 0) return;
+  ctx.save();
+  for (const s of STARS) {
+    let x = s.x - t * 3 * s.z; x = ((x + 20) % (W + 40) + W + 40) % (W + 40) - 20;
+    const y = s.y - t * 1.2 * s.z, al = A * s.b * (.72 + .28 * Math.sin(t * s.tw + s.ph));
+    if (al <= .012 || y < -6 || y > H + 6) continue;
+    ctx.globalAlpha = Math.min(1, al); ctx.fillStyle = s.warm ? '#ffdcae' : '#e2eaff'; ctx.fillRect(x - s.s / 2, y - s.s / 2, s.s, s.s);
+  }
+  ctx.restore();
+}
+const STAR_A = track([[0, .08], [LIFT - .4, .08], [LIFT, .5], [LIFT + 3, .25], [19.8, .25], [20.6, .12], [24, .12], [25, .2], [IE - .5, .2], [IE, .06], [GROW, .06],
+  [GROW + 1, .14], [CLIMAX - .2, .14], [CLIMAX + .4, .8], [TOTAL, .8]]);
+function warmth(a, x = 540, y = 980, r = 900, rgb = '255,170,90') {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, `rgba(${rgb},${.16 * a})`); g.addColorStop(1, `rgba(${rgb},0)`);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); ctx.restore();
+}
+function seriesTag(y, a) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a;
+  font(30, 500); ctx.letterSpacing = '6px'; const w = ctx.measureText(SERIES).width;
+  text(SERIES, W / 2, y, { size: 30, weight: 500, align: 'center', color: ORANGE, ls: 6 });
+  ctx.strokeStyle = `rgba(${O_RGB},.5)`; ctx.lineWidth = 1.5;
+  for (const k of [-1, 1]) { ctx.beginPath(); ctx.moveTo(W / 2 + k * (w / 2 + 24), y); ctx.lineTo(W / 2 + k * (w / 2 + 84), y); ctx.stroke(); }
+  ctx.restore();
+}
+function drawOn(build, len, k, col, lw, a = 1, glowCol) {
+  if (k <= 0 || a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a; ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  if (glowCol) { ctx.shadowColor = glowCol; ctx.shadowBlur = 14; }
+  ctx.setLineDash([len * clamp(k), len + 10]); ctx.beginPath(); build(); ctx.stroke(); ctx.restore();
+}
+function you(x, y, t, a = 1, r = 9) {
+  if (a <= 0) return;
+  const pulse = (t * .75) % 1;
+  ctx.save(); ctx.globalAlpha = a * (1 - pulse) * .45; ctx.strokeStyle = ORANGE; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(x, y, r + 4 + pulse * 44, 0, TAU); ctx.stroke(); ctx.restore();
+  glow(x, y, r, O_RGB, a, 6);
+}
+function pill(s, x, y, a, o = {}) {
+  if (a <= 0) return;
+  const size = o.size || 30; font(size, o.weight || 500, SANS); const w = Math.max(o.minW || 0, ctx.measureText(s).width + 64);
+  ctx.save(); ctx.globalAlpha *= a; ctx.translate(x, y); ctx.scale(o.sc || 1, o.sc || 1);
+  if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = 28; }
+  ctx.fillStyle = o.fill || 'rgba(255,255,255,.07)'; ctx.beginPath(); ctx.roundRect(-w / 2, -size * 1.1, w, size * 2.2, size * 1.1); ctx.fill();
+  ctx.shadowColor = 'rgba(0,0,0,0)'; ctx.strokeStyle = o.stroke || 'rgba(255,255,255,.18)'; ctx.lineWidth = 1.6; ctx.stroke();
+  text(s, 0, 1, { font: SANS, weight: o.weight || 500, size, align: 'center', color: o.color || CREAM });
+  ctx.restore();
+}
+const big = { align: 'center', spread: 3, blur: 14, rise: 18 };
+
+// ======================================================================== ① 性格测试（0–16）
+const READING = ['你很需要别人喜欢你、欣赏你。', '你对自己挺挑剔的。', '你还有很多潜力，没发挥出来。', '有时你外向、合群，有时又内向、谨慎。'];
+function card(x, y, w, h, a, glowK = 0) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a;
+  const g = ctx.createLinearGradient(x - w / 2, y - h / 2, x + w / 2, y + h / 2); g.addColorStop(0, 'rgba(34,30,44,.96)'); g.addColorStop(1, 'rgba(18,18,26,.96)');
+  ctx.fillStyle = g; ctx.strokeStyle = `rgba(244,213,138,${.45 + .4 * glowK})`; ctx.lineWidth = 2.5; ctx.shadowColor = `rgba(244,213,138,${.25 + .4 * glowK})`; ctx.shadowBlur = 24;
+  ctx.beginPath(); ctx.roundRect(x - w / 2, y - h / 2, w, h, 22); ctx.fill(); ctx.stroke();
+  ctx.shadowBlur = 0; ctx.strokeStyle = 'rgba(244,213,138,.22)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.roundRect(x - w / 2 + 12, y - h / 2 + 12, w - 24, h - 24, 14); ctx.stroke();
+  ctx.restore();
+}
+function star(x, y, r, fill, a) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a; ctx.translate(x, y);
+  ctx.beginPath(); for (let i = 0; i < 10; i++) { const rr = i % 2 ? r * .45 : r, an = -PI / 2 + i * PI / 5; i ? ctx.lineTo(Math.cos(an) * rr, Math.sin(an) * rr) : ctx.moveTo(Math.cos(an) * rr, Math.sin(an) * rr); } ctx.closePath();
+  ctx.strokeStyle = 'rgba(244,213,138,.7)'; ctx.lineWidth = 2; ctx.stroke();
+  if (fill > 0) { ctx.save(); ctx.clip(); ctx.fillStyle = ORANGE; ctx.shadowColor = `rgba(${O_RGB},.8)`; ctx.shadowBlur = 12; ctx.fillRect(-r, -r, 2 * r * clamp(fill), 2 * r); ctx.restore(); }
+  ctx.restore();
+}
+function sceneTest(t) {
+  if (t > LIFT + .1) return;
+  const push = E.inExpo(prog(t, 15.0, LIFT)), fade = 1 - sstep(15.5, LIFT, t);
+  ctx.save(); ctx.translate(540, 900); ctx.scale(1 + 1.4 * push, 1 + 1.4 * push); ctx.translate(-540, -900); ctx.globalAlpha = fade;
+  if (push > .02) ctx.filter = `blur(${(push * 16).toFixed(1)}px)`;
+  const qOut = sstep(Q.REVEAL - .1, Q.REVEAL + .4, t);
+  typeText('读一读，像不像你？', 540, 452, { ...big, size: 50, weight: 700 }, 1, 1 - qOut);
+  typeText('你给它打几分？', 540, 560, { ...big, size: 80, weight: 900, glow: 'rgba(255,225,190,.25)', glowBlur: 30 }, 1, 1 - qOut);
+  const fan = E.io(prog(t, 10.8, 12.4));                                                    // 39 张一模一样的卡片
+  for (let i = 12; i >= 1; i--) {
+    const an = (i - 6.5) * .05 * fan, dx = (i - 6.5) * 34 * fan, dy = Math.abs(i - 6.5) * 6 * fan;
+    ctx.save(); ctx.translate(540 + dx, 905 + dy); ctx.rotate(an); card(0, 0, 760, 520, fan * .9, 0); ctx.restore();
+  }
+  card(540, 905, 760, 520, 1, sstep(Q.REVEAL, Q.REVEAL + .4, t) * (1 - sstep(10.8, 11.4, t)));
+  text('你的性格分析', 540, 700, { font: SERIF, size: 40, weight: 900, align: 'center', color: '#f4d58a', ls: 6 });
+  READING.forEach((s, i) => {
+    const p = prog(t, .2 + i * .9, 1.0 + i * .9);
+    star(208, 790 + i * 76, 9, 1, sstep(.2 + i * .9, .5 + i * .9, t) * .9);
+    typeText(s, 236, 790 + i * 76, { size: 33, weight: 500, font: SERIF, spread: 5, rise: 10, blur: 6 }, p, 1);
+  });
+  const sc = 4.26 * E.out(prog(t, Q.REVEAL, Q.REVEAL + 1.0));                               // 评分：五颗星填到 4.26
+  for (let i = 0; i < 5; i++) star(392 + i * 74, 1088, 24, sc - i, 1);
+  if (t > Q.REVEAL - .05) text(sc.toFixed(2) + ' / 5', 540, 1226, { font: SERIF, size: 54, weight: 900, align: 'center', color: ORANGE, alpha: sstep(Q.REVEAL, Q.REVEAL + .3, t), glow: `rgba(${O_RGB},.5)`, blur: 16 });
+  text('39 个人 · 同一段话', 540, 560, { font: SERIF, size: 60, weight: 900, align: 'center', color: CREAM, alpha: sstep(11.0, 11.5, t) * (1 - sstep(13.4, 13.7, t)) });
+  const st = E.outExpo(prog(t, 13.6, 14.1));                                                 // 盖章：摘自星座书
+  if (st > 0) {
+    ctx.save(); ctx.translate(770, 1080); ctx.rotate(-.18); ctx.scale(1.6 - .6 * st, 1.6 - .6 * st); ctx.globalAlpha = st;
+    ctx.strokeStyle = '#e5484d'; ctx.lineWidth = 5; ctx.shadowColor = 'rgba(229,72,77,.6)'; ctx.shadowBlur = 16; ctx.beginPath(); ctx.roundRect(-130, -46, 260, 92, 12); ctx.stroke();
+    ctx.restore();
+    ctx.save(); ctx.translate(770, 1080); ctx.rotate(-.18); ctx.scale(1.6 - .6 * st, 1.6 - .6 * st);
+    text('摘自 · 星座书', 0, 2, { font: SERIF, size: 40, weight: 900, align: 'center', color: '#e5484d', alpha: st }); ctx.restore();
+  }
+  const oa = 1 - sstep(Q.REVEAL - .1, Q.REVEAL + .3, t), beatK = [Q.c3, Q.c2, Q.c1].reduce((m, c) => Math.max(m, t >= c ? 1 - E.out(prog(t, c, c + .4)) : 0), 0);
+  [['A · 不太像', 220], ['B · 有点像', 540], ['C · 太像了', 860]].forEach(([s, x]) => pill(s, x, 1290, oa, { size: 28, sc: 1 + .03 * beatK }));
+  ['3', '2', '1'].forEach((s, i) => {
+    const t0 = [Q.c3, Q.c2, Q.c1][i], v = prog(t, t0, t0 + 1.28); if (v <= 0 || v >= 1) return;
+    const k = 1.5 - .5 * E.outExpo(v * 2.5), al = 1 - sstep(.62, 1, v);
+    const bg = ctx.createRadialGradient(540, 900, 0, 540, 900, 230); bg.addColorStop(0, `rgba(6,7,11,${.88 * al})`); bg.addColorStop(1, 'rgba(6,7,11,0)'); ctx.fillStyle = bg; ctx.fillRect(300, 660, 480, 480);
+    ctx.save(); ctx.translate(540, 900); ctx.scale(k, k);
+    text(s, 0, 8, { font: SERIF, size: 210, weight: 900, align: 'center', color: CREAM, alpha: al, glow: 'rgba(255,240,220,.4)', blur: 30 });
+    ctx.restore();
+  });
+  ctx.restore();
+}
+
+// ======================================================================== ② 标题 · 太准了 · 一条钟形曲线
+function sceneTitle(t) {
+  if (t < LIFT - .05 || t > 20.6) return;
+  const e = E.outExpo(prog(t, LIFT, LIFT + .9)), out = sstep(19.5, 20.2, t), sc = (1.45 - .45 * e) * (1 + .06 * out);
+  ctx.save(); ctx.translate(540, 900); ctx.scale(sc, sc); ctx.translate(-540, -900);
+  ctx.filter = e < .97 ? `blur(${((1 - e) * 18).toFixed(1)}px)` : 'none';
+  text('本质主义', 540, 900, { size: 166, weight: 900, align: 'center', ls: 30, alpha: sstep(LIFT, LIFT + .15, t) * (1 - out), glow: 'rgba(255,225,190,.25)', blur: 40 });
+  ctx.restore();
+  seriesTag(712, sstep(LIFT + .4, LIFT + 1.1, t) * (1 - out));
+  typeText('ESSENTIALISM', 540, 1046, { size: 42, weight: 600, font: LAT, ls: 20, color: DIM, align: 'center', spread: 3 }, prog(t, LIFT + .5, LIFT + 1.6), 1 - out);
+  typeText('第四季 · 你身上的主义 ②', 540, 1118, { size: 28, weight: 500, ls: 10, color: '#6f7786', align: 'center', spread: 4 }, prog(t, LIFT + 1.1, LIFT + 2.0), 1 - out);
+}
+function zodiac(x, y, r, a, t) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a; ctx.translate(x, y); ctx.rotate(t * .1); ctx.strokeStyle = 'rgba(244,213,138,.8)'; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.stroke(); ctx.beginPath(); ctx.arc(0, 0, r * .62, 0, TAU); ctx.stroke();
+  for (let i = 0; i < 12; i++) { const an = i / 12 * TAU; ctx.beginPath(); ctx.moveTo(Math.cos(an) * r * .62, Math.sin(an) * r * .62); ctx.lineTo(Math.cos(an) * r, Math.sin(an) * r); ctx.stroke(); glow(Math.cos(an + .26) * r * .81, Math.sin(an + .26) * r * .81, 3, '244,213,138', .9, 3); }
+  ctx.restore();
+}
+function tarot(x, y, a, t) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a; ctx.translate(x, y); ctx.rotate(Math.sin(t * .8) * .06);
+  ctx.fillStyle = 'rgba(30,24,44,.95)'; ctx.strokeStyle = 'rgba(244,213,138,.85)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.roundRect(-70, -110, 140, 220, 12); ctx.fill(); ctx.stroke();
+  ctx.lineWidth = 1.5; ctx.strokeRect(-58, -98, 116, 196); ctx.restore();
+  ctx.save(); ctx.globalAlpha *= a; star(x, y - 10, 34, 1, 1); ctx.restore();
+}
+function typeGrid(x, y, a, t) {
+  if (a <= 0) return;
+  const L = ['INTJ', 'INTP', 'ENTJ', 'ENTP', 'INFJ', 'INFP', 'ENFJ', 'ENFP', 'ISTJ', 'ISFJ', 'ESTJ', 'ESFJ', 'ISTP', 'ISFP', 'ESTP', 'ESFP'];
+  L.forEach((s, i) => {
+    const cx = x + (i % 4 - 1.5) * 64, cy = y + (Math.floor(i / 4) - 1.5) * 50, hi = (Math.floor(t * 3) + i * 7) % 16 === 0;
+    ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = hi ? `rgba(${O_RGB},.35)` : 'rgba(255,255,255,.06)'; ctx.strokeStyle = hi ? ORANGE : 'rgba(255,255,255,.2)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(cx - 29, cy - 21, 58, 42, 8); ctx.fill(); ctx.stroke(); ctx.restore();
+    text(s, cx, cy + 1, { font: LAT, size: 18, weight: 700, align: 'center', color: hi ? '#ffd2a0' : CREAM, alpha: a });
+  });
+}
+let PEOPLE = [];
+const BASE_Y = 1180, SIG = 190;
+function bellCurve(t, a, flipK = 0, beat = 0, cut = 0) {
+  if (a <= 0) return;
+  seg(140, BASE_Y + 8, 940, BASE_Y + 8, 'rgba(236,230,218,.3)', 2, a);
+  text('内向', 150, BASE_Y + 50, { font: SANS, size: 26, color: DIM, alpha: a });
+  text('外向', 930, BASE_Y + 50, { font: SANS, size: 26, color: DIM, align: 'right', alpha: a });
+  drawOn(() => { for (let x = 140; x <= 940; x += 4) { const z = (x - 540) / SIG, y = BASE_Y - 4 - 166 * Math.exp(-z * z / 2); x === 140 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); } }, 1100, sstep(24.2, 26.0, t), 'rgba(236,230,218,.55)', 2, a);
+  PEOPLE.forEach((p, i) => {
+    const k = sstep(24.4 + p.d * 1.6, 24.8 + p.d * 1.6, t); if (k <= 0) return;
+    let side = p.v < 0 ? 0 : 1;
+    if (flipK > 0 && Math.abs(p.v) < .55 && hash2(i, beat) < .42) side = 1 - side;
+    const hop = flipK > 0 && Math.abs(p.v) < .55 && hash2(i, beat) < .42 ? (1 - E.out(((t - IE) / BEAT) % 1)) * 10 : 0;
+    const col = cut > 0 ? (side ? O_RGB : T_RGB) : '236,230,218';
+    ctx.save(); ctx.globalAlpha = a * k * (cut > 0 ? 1 : .8); ctx.fillStyle = `rgb(${col})`; ctx.beginPath(); ctx.arc(p.x, p.y - hop, 4.6, 0, TAU); ctx.fill(); ctx.restore();
+  });
+  if (cut > 0) {
+    drawOn(() => { ctx.moveTo(540, 900); ctx.lineTo(540, BASE_Y + 30); }, 320, cut, '#ffffff', 3, a, 'rgba(255,255,255,.8)');
+    text('i 人', 330, 900, { font: SERIF, size: 72, weight: 900, align: 'center', color: TEAL, alpha: a * cut, glow: `rgba(${T_RGB},.5)`, blur: 16 });
+    text('e 人', 750, 900, { font: SERIF, size: 72, weight: 900, align: 'center', color: ORANGE, alpha: a * cut, glow: `rgba(${O_RGB},.5)`, blur: 16 });
+  }
+}
+function sceneBarnum(t) {
+  if (t < 19.7 || t > ESS + .2) return;
+  const A1 = sstep(19.9, 20.5, t) * (1 - sstep(23.6, 24.1, t));
+  if (A1 > 0) {
+    zodiac(250, 880, 120, A1 * sstep(19.9, 20.4, t), t);
+    tarot(540, 880, A1 * sstep(20.3, 20.8, t), t);
+    typeGrid(830, 880, A1 * sstep(20.7, 21.2, t), t);
+    const bk = 1 - E.out(prog(t, 21.6, 22.2));
+    ctx.save(); ctx.translate(540, 1150); ctx.scale(1 + .2 * bk, 1 + .2 * bk);
+    text('“太准了！”', 0, 0, { font: SERIF, size: 64, weight: 900, align: 'center', color: '#ffd2a0', alpha: A1 * sstep(21.6, 22.0, t), glow: `rgba(${O_RGB},.5)`, blur: 18 });
+    ctx.restore();
+  }
+  const A2 = sstep(24.0, 24.4, t) * (1 - sstep(ESS - .6, ESS - .05, t));
+  if (A2 > 0) {
+    const mid = sstep(27.7, 28.4, t) * (1 - sstep(31.4, 31.8, t)), cut = sstep(31.6, 32.4, t);
+    if (mid > 0) { ctx.save(); ctx.globalAlpha = A2 * mid * .5; const g = ctx.createRadialGradient(540, BASE_Y - 60, 0, 540, BASE_Y - 60, 200); g.addColorStop(0, `rgba(${O_RGB},.35)`); g.addColorStop(1, `rgba(${O_RGB},0)`); ctx.fillStyle = g; ctx.fillRect(320, 900, 440, 320); ctx.restore(); }
+    if (mid > 0) text('大多数人在这里', 540, 940, { font: SERIF, size: 42, weight: 900, align: 'center', color: '#ffd2a0', alpha: A2 * mid });
+    const beat = Math.floor((t - IE) / BEAT), flipK = sstep(37.6, 38.0, t) * (1 - sstep(48.6, 49.0, t));
+    bellCurve(t, A2, flipK, beat, cut);
+    const ra = A2 * sstep(37.6, 38.0, t) * (1 - sstep(44.4, 44.9, t));
+    if (ra > 0) text(`第 ${1 + Math.max(0, Math.floor((t - 37.6) / (BEAT * 2)))} 次测试`, 540, 760, { font: SERIF, size: 40, weight: 900, align: 'center', color: CREAM, alpha: ra });
+    const ka = A2 * sstep(44.9, 45.5, t);
+    if (ka > 0) {
+      text('3～5 成', 540, 700, { font: SERIF, size: 96, weight: 900, align: 'center', color: ORANGE, alpha: ka, glow: `rgba(${O_RGB},.6)`, blur: 22 });
+      text('隔四五周重测，类型会变', 540, 790, { font: SERIF, size: 36, weight: 700, align: 'center', color: CREAM, alpha: ka });
+    }
+    const ba = A2 * sstep(48.9, 49.5, t);
+    if (ba > 0) { ctx.save(); ctx.globalAlpha = ba * .6; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.setLineDash([8, 10]); ctx.lineDashOffset = -t * 20; ctx.strokeRect(430, 990, 220, 210); ctx.restore(); }
+  }
+}
+
+// ======================================================================== ④ 本质主义：一张标签，长成一个笼子
+function sceneEssence(t) {
+  if (t < ESS - .3 || t > 68.2) return;
+  const A = sstep(ESS - .1, ESS + .5, t) * (1 - sstep(67.2, 67.9, t));
+  if (A <= 0) return;
+  const cx = 540, cy = 930;
+  you(cx, cy, t, A, 13);
+  const tg = E.outExpo(prog(t, 54.2, 55.0));
+  pill('INFP', cx, cy - 90, A * tg, { size: 34, stroke: `rgba(${O_RGB},.8)`, color: '#ffd2a0', sc: 1 + .2 * (1 - tg) });
+  const cage = E.io(prog(t, 57.9, 61.0));
+  if (cage > 0) {
+    ctx.save(); ctx.globalAlpha = A; ctx.strokeStyle = 'rgba(200,205,215,.85)'; ctx.lineWidth = 4; ctx.shadowColor = 'rgba(200,205,215,.5)'; ctx.shadowBlur = 12;
+    const w = 300, h = 380, top = cy - 210;
+    for (let i = 0; i <= 8; i++) { const x = cx - w / 2 + i * w / 8, k = clamp(cage * 9 - i * .9); if (k <= 0) continue; ctx.beginPath(); ctx.moveTo(x, top + 40); ctx.lineTo(x, top + 40 + (h - 40) * k); ctx.stroke(); }
+    ctx.beginPath(); ctx.ellipse(cx, top + 40, w / 2, 26, 0, PI, TAU); ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx - w / 2, top + h); ctx.lineTo(cx + w / 2, top + h); ctx.stroke();
+    ctx.restore();
+  }
+  ['我就是这样的人', '我天生内向', '我改不了'].forEach((s, i) => {
+    const k = sstep(64.4 + i * .5, 64.9 + i * .5, t); if (k <= 0) return;
+    text(s, [230, 850, 540][i], [760, 820, 1250][i], { font: SERIF, size: 34, weight: 700, align: 'center', color: '#9aa3b2', alpha: A * k });
+  });
+}
+
+// ======================================================================== ⑤ 你在变：三条慢慢往上走的线（示意）
+function sceneGrow(t) {
+  if (t < GROW - .2 || t > CLIMAX + .3) return;
+  const A = sstep(67.6, 68.3, t) * (1 - sstep(CLIMAX - .4, CLIMAX + .1, t));
+  if (A <= 0) return;
+  const x0 = 170, x1 = 910, y0 = 1150, ax = age => x0 + (x1 - x0) * (age - 18) / 42;
+  seg(x0, y0, x1, y0, 'rgba(236,230,218,.35)', 2, A); seg(x0, y0, x0, y0 - 360, 'rgba(236,230,218,.25)', 2, A);
+  [20, 30, 40, 50, 60].forEach(age => text(String(age), ax(age), y0 + 34, { font: SERIF, size: 26, align: 'center', color: '#6f7786', alpha: A }));
+  text('岁', x1 + 30, y0 + 34, { font: SANS, size: 22, color: '#6f7786', alpha: A });
+  const draw = sstep(67.9, 72.0, t);
+  [['更稳定', 1.0, TEAL, T_RGB, 150], ['更负责', .9, ORANGE, O_RGB, 75], ['更有主见', .8, '#ffd2a0', '255,210,160', 0]].forEach(([lab, amp, col, rgb, off], i) => {
+    const f = age => y0 - 30 - off - 150 * amp * (1 - Math.exp(-(age - 18) / 10));
+    drawOn(() => { for (let age = 18; age <= 60; age += .5) { const x = ax(age), y = f(age); age === 18 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); } }, 1100, draw, col, 4, A, `rgba(${rgb},.7)`);
+    const la = A * sstep(72.2 + i * .3, 72.7 + i * .3, t);
+    if (la > 0) pill(lab, ax(60) - 70, f(60) - 34, la, { size: 26, stroke: col, color: col });
+  });
+  const band = A * sstep(72.2, 72.8, t);
+  if (band > 0) { ctx.save(); ctx.globalAlpha = band * .07; ctx.fillStyle = CREAM; ctx.fillRect(ax(20), y0 - 380, ax(40) - ax(20), 380); ctx.restore(); text('20–40 岁', (ax(20) + ax(40)) / 2, y0 - 400, { font: SERIF, size: 30, weight: 900, align: 'center', color: CREAM, alpha: band }); }
+  text('示意', x1, y0 - 380, { font: SANS, size: 22, align: 'right', color: '#6f7786', alpha: A });
+}
+
+// ======================================================================== ⑥ 包罗万象：笼子散开，你变成一整片星空
+let MULTI = [];
+function sceneMulti(t) {
+  if (t < CLIMAX - .1) return;
+  const A = sstep(CLIMAX - .1, CLIMAX + .2, t);
+  const fl = 1 - prog(t, CLIMAX, CLIMAX + .6);
+  if (t > CLIMAX && fl > 0) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = `rgba(255,214,170,${.38 * fl * fl})`; ctx.fillRect(0, 0, W, H); ctx.restore(); }
+  const fl2 = 1 - prog(t, FINAL, FINAL + .7);
+  if (t > FINAL && fl2 > 0) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = `rgba(255,226,190,${.32 * fl2 * fl2})`; ctx.fillRect(0, 0, W, H); ctx.restore(); }
+  warmth(A * (1 + .5 * sstep(FINAL, FINAL + 1.5, t)), 540, 1060, 760);
+  const cx = 540, cy = 1040, spread = E.out(prog(t, CLIMAX + .2, 88.0)), wide = sstep(FINAL, FINAL + 3, t);
+  MULTI.forEach((m, i) => {                                                                  // 一个个字母飞出去，变成星星
+    const R = lerp(70, m.r, spread) * (1 + .5 * wide), an = m.an + t * m.w, x = cx + Math.cos(an) * R, y = cy + Math.sin(an) * R * .8;
+    if (spread < .7) text(m.s, x, y, { font: LAT, size: 30, weight: 700, align: 'center', color: m.c, alpha: A * (1 - sstep(.4, .7, spread)) * .9 });
+    if (spread > .3) glow(x, y, 2 + 2.4 * m.b, m.c === TEAL ? T_RGB : '255,214,160', A * sstep(.3, .7, spread) * (.6 + .4 * Math.sin(t * 2 + i)), 4);
+  });
+  you(cx, cy, t, A, 13 + 4 * wide);
+  const qa = 1 - sstep(92.7, 93.3, t);
+  typeText('「我辽阔广大，', 540, 540, { ...big, size: 72, weight: 900 }, prog(t, CLIMAX + .3, CLIMAX + 1.1), qa);
+  typeText('我包罗万象。', 540, 650, { ...big, size: 72, weight: 900, color: '#ffd2a0', glow: `rgba(${O_RGB},.45)`, glowBlur: 36 }, prog(t, CLIMAX + 1.2, CLIMAX + 2.0), qa);
+  typeText('—— 惠特曼《自我之歌》', 540, 748, { size: 26, weight: 500, font: SANS, align: 'center', color: DIM, ls: 4, spread: 5 }, prog(t, CLIMAX + 2.2, CLIMAX + 2.8), qa);
+  typeText('测试可以拿来聊天，', 540, 560, { ...big, size: 56, weight: 700 }, prog(t, 93.4, 94.3), 1);
+  typeText('别把它当成命运。', 540, 666, { ...big, size: 72, weight: 900, glow: `rgba(${O_RGB},.5)`, glowBlur: 40 }, prog(t, FINAL, FINAL + .9), 1);
+}
+
+// ======================================================================== 世界层
+function WORLD(t) {
+  space();
+  starfield(t, STAR_A(t));
+  sceneTest(t); sceneTitle(t); sceneBarnum(t); sceneEssence(t); sceneGrow(t); sceneMulti(t);
+}
+function SAMPLES(T) {
+  if ((T > 7.9 && T < 9.2) || (T > 10.6 && T < 12.6) || (T > 14.8 && T < LIFT + 1.2)) return 4;
+  if ((T > CLIMAX - .2 && T < CLIMAX + 1.4) || (T > FINAL - .2 && T < FINAL + 1.2)) return 5;
+  return 3;
+}
+function BLOOM_K(T) { return .42 + .18 * win(T, LIFT, LIFT + 4, .2, .8) + .1 * win(T, 44.9, 48.6, .3, .5) + .22 * win(T, CLIMAX, TOTAL, .2, 1) + .12 * win(T, FINAL, TOTAL, .2, 1); }
+function OVER(T) {
+  stamp('1949', 'Forer · J Abnorm Soc Psychol', 8.2, 15.6, T);
+  stamp('1956', 'Meehl · "Barnum effect"', 16.3, 23.7, T);
+  stamp('2005', 'Pittenger · Consult Psychol J', 44.9, 52.9, T);
+  stamp('2006', 'Roberts, Walton & Viechtbauer · Psych Bull', 67.9, 75.9, T);
+}
+function MASTER(T) { return 1; }
+function INIT() {
+  const r = mulberry(25);
+  STARS = Array.from({ length: 700 }, () => { const b = Math.pow(r(), 3); return { x: r() * W, y: r() * H, z: .35 + r() * .65, b: .22 + .78 * b, s: .8 + 2.0 * b, tw: .6 + r() * 2.2, ph: r() * TAU, warm: r() < .2 }; });
+  const rp = mulberry(251), bins = {};
+  PEOPLE = [];
+  for (let i = 0; i < 300; i++) {
+    const u = Math.max(1e-6, rp()), v0 = rp(), v = clamp(Math.sqrt(-2 * Math.log(u)) * Math.cos(TAU * v0), -2.05, 2.05);
+    const b = Math.round(v * SIG / 24), n = bins[b] = (bins[b] || 0) + 1;
+    PEOPLE.push({ v: b * 24 / SIG, x: 540 + b * 24, y: BASE_Y - 6 - (n - 1) * 11, d: rp() });
+  }
+  const rm = mulberry(252), LET = 'IENSTFJP';
+  MULTI = Array.from({ length: 90 }, (_, i) => ({ s: LET[i % 8], r: 120 + Math.pow(rm(), .7) * 420, an: rm() * TAU, w: (rm() - .5) * .16, b: rm(), c: [TEAL, ORANGE, '#ffd2a0', CREAM][i % 4] }));
+}
+
+// ======================================================================== 音效提示表（音高都在升 F 小调里，最后一个和弦是升 F 大调）
+const NOTE = { Fs5: 739.99, A5: 880, As5: 932.33, Cs6: 1108.73, Fs6: 1479.98, A6: 1760, As6: 1864.66, Cs7: 2217.46, Fs7: 2959.96 };
+const FM_SHIM = [NOTE.A6, NOTE.Cs7, NOTE.Fs6, NOTE.Fs7, NOTE.Cs6], FMAJ_SHIM = [NOTE.As6, NOTE.Cs7, NOTE.Fs6, NOTE.Fs7, NOTE.Cs6], FM_SWELL = [92.50, 138.59, 185.00, 220.00, 277.18];
+function CUES() {
+  const c = [];
+  for (let i = 0; i < 4; i++) c.push([.2 + i * .9, 'tink', { f: [NOTE.Cs6, NOTE.A5, NOTE.Fs6, NOTE.Cs6][i], gain: .1 }]);
+  [Q.c3, Q.c2, Q.c1].forEach(t => c.push([t, 'tick', { gain: .55 }]));
+  c.push([Q.REVEAL, 'chord', { f: [NOTE.Fs5, NOTE.A5, NOTE.Cs6], gain: .24 }], [Q.REVEAL + .1, 'bar', { f0: 440, f1: 880, dur: .9, gain: .2 }]);
+  c.push([10.8, 'page', { gain: .3 }], [11.2, 'page', { gain: .22 }], [13.62, 'slap', { gain: .42, pan: .3 }]);
+  c.push([LIFT - 1.33, 'riser', { dur: 1.33, gain: .38 }], [LIFT, 'boom', { gain: .55 }], [LIFT, 'whoosh', { dur: .9, gain: .32 }], [LIFT + .1, 'shimmer', { f: FM_SHIM, gain: .28 }]);
+  c.push([20.0, 'swish', { gain: .2 }], [21.6, 'tink', { f: NOTE.Fs6, gain: .18 }], [24.2, 'whoosh', { dur: 1.6, gain: .14 }], [31.6, 'swish', { gain: .28 }], [31.7, 'click', { gain: .26 }]);
+  c.push([IE, 'whoosh', { dur: .5, gain: .25 }], [44.9, 'bar', { f0: 370, f1: 740, dur: .9, gain: .26 }], [48.9, 'tink', { f: NOTE.Cs6, gain: .14 }]);
+  c.push([ESS, 'whoosh', { dur: .5, gain: .22 }], [54.2, 'tink', { f: NOTE.A5, gain: .16 }], [57.9, 'chain', { gain: .3 }], [60.2, 'chain', { gain: .2 }]);
+  c.push([67.9, 'shimmer', { f: FM_SHIM, gain: .14 }], [72.3, 'chord', { f: [NOTE.Fs5, NOTE.A5, NOTE.Cs6], gain: .12 }]);
+  c.push([76.6, 'swell', { dur: CLIMAX - 76.6, f: FM_SWELL, gain: .28 }]);
+  c.push([CLIMAX, 'boom', { gain: .6 }], [CLIMAX, 'shimmer', { f: FM_SHIM, gain: .42 }], [CLIMAX + .4, 'air', { dur: 10, hum: 92.50, gain: .14 }]);
+  c.push([FINAL - 2.6, 'revcym', { dur: 2.6, gain: .28 }], [FINAL, 'boom', { gain: .5 }], [FINAL, 'shimmer', { f: FMAJ_SHIM, gain: .45 }], [FINAL + .1, 'chord', { f: [NOTE.Fs5, NOTE.As5, NOTE.Cs6], gain: .2 }]);
+  return c.sort((a, b) => a[0] - b[0]);
+}
