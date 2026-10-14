@@ -1,0 +1,404 @@
+// ======================================================================== No.44 消费主义：更贵的酒，更好喝吗？
+// 第六季·日常里的主义 ①。开头是一道选择题：同一种酒，一杯标 90 美元，一杯标 10 美元，哪杯更好喝？（Plassmann et al., 2008）
+// 音乐：原创配乐（music.py，C 小调 90 BPM），从第 0 秒放到最后一秒，不剪不断。高音动机像一张价签：同一个音敲两下，再往上跳，一次比一次跳得高。
+// 画面的每个段落都落在配乐的小节线上（1 小节 = 2.667 秒）：
+//   16.0 标题 · 37.33 安慰剂（每拍一个鼓点） · 53.33 盲品（紧张） · 64.0 遮住价格（只剩钢琴） · 80.0 高潮：价签掉下来 · 96.0 C 大调
+const BEAT = 60 / 90, BAR = BEAT * 4, BT = n => n * BEAT;
+const LIFT = BT(24), PILL = BT(56), BLIND = BT(80), COVER = BT(96), CLIMAX = BT(120), FINAL = BT(144), TOTAL = BT(156);
+const SECTIONS = [['一杯酒', 0, LIFT], ['价格', LIFT, PILL], ['安慰剂', PILL, BLIND], ['盲品', BLIND, COVER], ['遮住价格', COVER, CLIMAX], ['价值', CLIMAX, TOTAL]];
+const SERIES = '黑猫不说话 · 心理学 No.44';
+const Q = { c3: BT(6), c2: BT(8), c1: BT(10), REVEAL: BT(12), TIMES: BT(16) };
+
+const LINES = [
+  [0.15, 3.9, '同一种酒，一杯标 90 美元，一杯标 10 美元。'],
+  [4.1, 7.6, '喝的人会觉得哪杯更好喝？先猜一个。'],
+  [8.2, 10.4, '答案是：标 90 美元的那杯。'],
+  [10.8, 13.3, '不只是嘴上说说：大脑里管「享受」的那一块，'],
+  [13.6, 15.7, '也真的更活跃了。'],
+  [16.3, 19.6, '这是 2008 年加州理工的一个实验。'],
+  [19.9, 23.7, '酒是同一瓶，变的只有价格。'],
+  [24.0, 27.4, '我们以为在买东西，其实也在买「感觉」。'],
+  [27.7, 31.3, '价格，本身就是一种调料。'],
+  [31.6, 35.3, '这就是「消费主义」的一个秘密：贵，让人觉得好。'],
+  [37.6, 40.6, '连药也一样。'],
+  [40.9, 44.6, '同一颗没有药效的糖丸，说它 2.5 美元一颗，'],
+  [44.9, 48.6, '约 85% 的人觉得疼痛减轻了；说它打折到 1 毛钱，只有约 61%。'],
+  [48.9, 52.9, '糖丸没变，变的只是标价。'],
+  [53.6, 57.6, '可如果把价格遮住呢？'],
+  [57.9, 60.6, '6000 多次盲品发现：不知道价格时，'],
+  [60.8, 63.4, '普通人并没有更喜欢贵的酒。'],
+  [64.3, 67.6, '所以，贵让你「觉得」好，这份享受是真的；'],
+  [67.9, 71.9, '只是它来自价格，不来自东西本身。'],
+  [72.2, 75.9, '下次买东西前，试试先遮住价格，问问自己：'],
+  [76.3, 79.6, '我要的是它，还是它的标价？'],
+  [84.9, 88.6, '价格，是别人告诉你的；'],
+  [88.9, 92.6, '值不值，要你自己尝。'],
+  [98.4, 103.0, '评论区：你买过最「贵但不值」的东西是什么？'],
+];
+const BIGLINES = [
+  [80.2, 92.6, '「如今的人，知道一切东西的价格，却不知道任何东西的价值。」—— 王尔德《道林·格雷的画像》'],
+  [93.4, 98.0, '遮住价格，再尝一口。'],
+];
+
+// ======================================================================== 共用
+function space() {
+  const g = ctx.createRadialGradient(540, 820, 80, 540, 820, 1500);
+  g.addColorStop(0, '#12141c'); g.addColorStop(.55, '#08090f'); g.addColorStop(1, '#020305');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
+let STARS = [];
+function starfield(t, A) {
+  if (A <= 0) return;
+  ctx.save();
+  for (const s of STARS) {
+    let x = s.x - t * 3 * s.z; x = ((x + 20) % (W + 40) + W + 40) % (W + 40) - 20;
+    const y = s.y - t * 1.2 * s.z, al = A * s.b * (.72 + .28 * Math.sin(t * s.tw + s.ph));
+    if (al <= .012 || y < -6 || y > H + 6) continue;
+    ctx.globalAlpha = Math.min(1, al); ctx.fillStyle = s.warm ? '#ffdcae' : '#e2eaff'; ctx.fillRect(x - s.s / 2, y - s.s / 2, s.s, s.s);
+  }
+  ctx.restore();
+}
+const STAR_A = track([[0, .08], [LIFT - .4, .08], [LIFT, .5], [LIFT + 3, .25], [19.8, .25], [20.6, .12], [24, .12], [25, .2], [PILL - .5, .2], [PILL, .06], [COVER, .06],
+  [COVER + 1, .14], [CLIMAX - .2, .14], [CLIMAX + .4, .7], [TOTAL, .7]]);
+function warmth(a, x = 540, y = 980, r = 900, rgb = '255,170,90') {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, `rgba(${rgb},${.16 * a})`); g.addColorStop(1, `rgba(${rgb},0)`);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); ctx.restore();
+}
+function seriesTag(y, a) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a;
+  font(30, 500); ctx.letterSpacing = '6px'; const w = ctx.measureText(SERIES).width;
+  text(SERIES, W / 2, y, { size: 30, weight: 500, align: 'center', color: ORANGE, ls: 6 });
+  ctx.strokeStyle = `rgba(${O_RGB},.5)`; ctx.lineWidth = 1.5;
+  for (const k of [-1, 1]) { ctx.beginPath(); ctx.moveTo(W / 2 + k * (w / 2 + 24), y); ctx.lineTo(W / 2 + k * (w / 2 + 84), y); ctx.stroke(); }
+  ctx.restore();
+}
+function drawOn(build, len, k, col, lw, a = 1, glowCol) {
+  if (k <= 0 || a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a; ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  if (glowCol) { ctx.shadowColor = glowCol; ctx.shadowBlur = 14; }
+  ctx.setLineDash([len * clamp(k), len + 10]); ctx.beginPath(); build(); ctx.stroke(); ctx.restore();
+}
+function you(x, y, t, a = 1, r = 9) {
+  if (a <= 0) return;
+  const pulse = (t * .75) % 1;
+  ctx.save(); ctx.globalAlpha = a * (1 - pulse) * .45; ctx.strokeStyle = ORANGE; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(x, y, r + 4 + pulse * 44, 0, TAU); ctx.stroke(); ctx.restore();
+  glow(x, y, r, O_RGB, a, 6);
+}
+function pill(s, x, y, a, o = {}) {
+  if (a <= 0) return;
+  const size = o.size || 30; font(size, o.weight || 500, SANS); const w = Math.max(o.minW || 0, ctx.measureText(s).width + 64);
+  ctx.save(); ctx.globalAlpha *= a; ctx.translate(x, y); ctx.scale(o.sc || 1, o.sc || 1);
+  if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = 28; }
+  ctx.fillStyle = o.fill || 'rgba(255,255,255,.07)'; ctx.beginPath(); ctx.roundRect(-w / 2, -size * 1.1, w, size * 2.2, size * 1.1); ctx.fill();
+  ctx.shadowColor = 'rgba(0,0,0,0)'; ctx.strokeStyle = o.stroke || 'rgba(255,255,255,.18)'; ctx.lineWidth = 1.6; ctx.stroke();
+  text(s, 0, 1, { font: SANS, weight: o.weight || 500, size, align: 'center', color: o.color || CREAM });
+  ctx.restore();
+}
+const big = { align: 'center', spread: 3, blur: 14, rise: 18 };
+
+
+
+// ======================================================================== 酒杯、价签、大脑、药、调料瓶
+const WINE = '138,24,46';
+function glass(x, y, s, a, lvl = .55, glowK = 0) {                                                  // y：杯底
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a; ctx.translate(x, y); ctx.scale(s, s);
+  const bowl = () => { ctx.beginPath(); ctx.moveTo(-70, -330); ctx.bezierCurveTo(-74, -230, -40, -170, 0, -168); ctx.bezierCurveTo(40, -170, 74, -230, 70, -330); };
+  if (glowK > 0) { const g = ctx.createRadialGradient(0, -240, 0, 0, -240, 200); g.addColorStop(0, `rgba(255,170,120,${.35 * glowK})`); g.addColorStop(1, 'rgba(255,170,120,0)'); ctx.fillStyle = g; ctx.fillRect(-200, -440, 400, 400); }
+  ctx.save(); bowl(); ctx.closePath(); ctx.clip();
+  const top = -168 - 162 * lvl, g = ctx.createLinearGradient(0, top, 0, -168); g.addColorStop(0, `rgba(${WINE},.95)`); g.addColorStop(1, 'rgba(70,8,20,.98)');
+  ctx.fillStyle = g; ctx.fillRect(-80, top, 160, 200);
+  ctx.fillStyle = 'rgba(255,200,200,.18)'; ctx.fillRect(-80, top, 160, 4); ctx.restore();
+  ctx.strokeStyle = 'rgba(236,230,218,.75)'; ctx.lineWidth = 3; bowl(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, -168); ctx.lineTo(0, -12); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(0, -8, 54, 9, 0, 0, TAU); ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,.25)'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(-50, -300); ctx.quadraticCurveTo(-54, -240, -36, -205); ctx.stroke();
+  ctx.restore();
+}
+function tag(x, y, s, label, a, o = {}) {                                                           // 价签，(x, y)：绳子挂的点
+  if (a <= 0) return;
+  const rot = o.rot || 0, flip = o.flip === undefined ? 1 : o.flip, gold = o.gold;
+  ctx.save(); ctx.globalAlpha *= a; ctx.translate(x, y); ctx.rotate(rot);
+  ctx.strokeStyle = 'rgba(236,230,218,.5)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 40); ctx.stroke();
+  ctx.translate(0, 40); ctx.scale(s * flip, s);
+  ctx.fillStyle = gold ? '#e8b866' : '#c9ccd3'; if (gold) { ctx.shadowColor = `rgba(${O_RGB},.6)`; ctx.shadowBlur = 24; }
+  ctx.beginPath(); ctx.moveTo(-26, 0); ctx.lineTo(26, 0); ctx.lineTo(60, 34); ctx.lineTo(60, 120); ctx.lineTo(-60, 120); ctx.lineTo(-60, 34); ctx.closePath(); ctx.fill(); ctx.shadowBlur = 0;
+  ctx.fillStyle = '#0c0d12'; ctx.beginPath(); ctx.arc(0, 20, 7, 0, TAU); ctx.fill();
+  ctx.restore();
+  if (label && Math.abs(flip) > .15) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.translate(0, 40); ctx.scale(s * Math.abs(flip), s);
+    text(label, 0, 80, { font: LAT, size: 40, weight: 700, align: 'center', color: '#15161c', alpha: a * (flip > 0 ? 1 : 0) });
+    ctx.restore();
+  }
+}
+function brain(x, y, s, a, k, rgb = O_RGB) {                                                        // k：前下方那一块有多亮
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a; ctx.translate(x, y); ctx.scale(s, s); ctx.strokeStyle = 'rgba(236,230,218,.55)'; ctx.lineWidth = 3; ctx.fillStyle = 'rgba(255,255,255,.04)';
+  ctx.beginPath(); ctx.moveTo(-110, 20); ctx.bezierCurveTo(-130, -60, -60, -110, 0, -100); ctx.bezierCurveTo(70, -110, 130, -60, 116, 10); ctx.bezierCurveTo(110, 60, 60, 70, 20, 60);
+  ctx.bezierCurveTo(-10, 80, -60, 80, -80, 60); ctx.bezierCurveTo(-110, 60, -112, 40, -110, 20); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle = 'rgba(236,230,218,.25)'; ctx.lineWidth = 2;
+  for (const [x0, y0, x1, y1] of [[-60, -70, -20, -20], [10, -90, 30, -30], [60, -60, 50, 0], [-90, 0, -40, 20]]) { ctx.beginPath(); ctx.moveTo(x0, y0); ctx.quadraticCurveTo((x0 + x1) / 2 + 20, (y0 + y1) / 2, x1, y1); ctx.stroke(); }
+  ctx.restore();
+  glow(x - 70 * s, y + 30 * s, 16 * s * (.6 + .6 * k), rgb, a * (.15 + .85 * k), 5);
+}
+function capsule(x, y, s, a, c1, c2, rot = -.5) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a; ctx.translate(x, y); ctx.rotate(rot); ctx.scale(s, s);
+  ctx.fillStyle = c1; ctx.beginPath(); ctx.roundRect(-40, -16, 40, 32, [16, 0, 0, 16]); ctx.fill();
+  ctx.fillStyle = c2; ctx.beginPath(); ctx.roundRect(0, -16, 40, 32, [0, 16, 16, 0]); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.3)'; ctx.fillRect(-30, -10, 60, 4); ctx.restore();
+}
+function shaker(x, y, a, tilt, t) {                                                                 // 写着“价格”的调料瓶，往杯子里撒
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a; ctx.translate(x, y); ctx.rotate(tilt);
+  ctx.fillStyle = 'rgba(40,42,52,.96)'; ctx.strokeStyle = 'rgba(236,230,218,.7)'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.roundRect(-55, -60, 110, 150, 18); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#c9ccd3'; ctx.beginPath(); ctx.moveTo(-55, -60); ctx.quadraticCurveTo(0, -120, 55, -60); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#0c0d12'; for (const dx of [-18, 0, 18]) { ctx.beginPath(); ctx.arc(dx, -78, 4, 0, TAU); ctx.fill(); }
+  ctx.restore();
+  ctx.save(); ctx.translate(x, y); ctx.rotate(tilt); text('价格', 0, 28, { font: SERIF, size: 36, weight: 900, align: 'center', color: '#ffd2a0', alpha: a }); ctx.restore();
+}
+
+// ======================================================================== ① 一杯酒（0–16）
+function sceneTest(t) {
+  if (t > LIFT + .1) return;
+  const push = E.inExpo(prog(t, 15.0, LIFT)), fade = 1 - sstep(15.5, LIFT, t);
+  ctx.save(); ctx.translate(540, 900); ctx.scale(1 + 1.4 * push, 1 + 1.4 * push); ctx.translate(-540, -900); ctx.globalAlpha = fade;
+  if (push > .02) ctx.filter = `blur(${(push * 16).toFixed(1)}px)`;
+  const qOut = sstep(Q.REVEAL - .1, Q.REVEAL + .4, t);
+  typeText('同一种酒：', 540, 452, { ...big, size: 44, weight: 700 }, 1, 1 - qOut);
+  typeText('哪杯更好喝？', 540, 560, { ...big, size: 86, weight: 900, glow: 'rgba(255,225,190,.25)', glowBlur: 30 }, 1, 1 - qOut);
+  const P = 1 - sstep(10.5, 10.9, t), win = sstep(Q.REVEAL, Q.REVEAL + .5, t);
+  if (P > 0) {
+    glass(330, 1230, 1, P, .55, win); glass(750, 1230, 1, P, .55, 0);
+    tag(475, 880, 1, '$90', P, { gold: true, rot: -.12 + .04 * Math.sin(t * 2) });
+    tag(895, 880, 1, '$10', P, { rot: -.12 + .04 * Math.sin(t * 2 + 1) });
+  }
+  const C = sstep(10.8, 11.3, t);
+  if (C > 0) {                                                                                      // 大脑：标 90 美元那杯，管“享受”的那一块更亮（示意）
+    const k = E.io(prog(t, 11.2, 12.4));
+    brain(320, 960, 1.15, C, .2 + .8 * k); brain(760, 960, 1.15, C, .2);
+    text('标 90 美元', 320, 1140, { font: SERIF, size: 34, weight: 900, align: 'center', color: '#ffd2a0', alpha: C });
+    text('标 10 美元', 760, 1140, { font: SERIF, size: 34, weight: 900, align: 'center', color: '#c3cad6', alpha: C });
+    text('内侧眶额皮层（示意）', 540, 1240, { font: SANS, size: 24, align: 'center', color: '#6f7786', alpha: C * sstep(13.6, 14.0, t) });
+  }
+  text('大脑真的更享受', 540, 560, { font: SERIF, size: 60, weight: 900, align: 'center', color: '#ffd2a0', alpha: sstep(10.9, 11.4, t), glow: `rgba(${O_RGB},.4)`, blur: 14 });
+  text('B · 标 90 美元的', 540, 560, { font: SERIF, size: 64, weight: 900, align: 'center', color: '#ffd2a0', alpha: sstep(Q.REVEAL, Q.REVEAL + .4, t) * (1 - sstep(10.6, 11.0, t)), glow: `rgba(${O_RGB},.5)`, blur: 22 });
+  const oa = 1 - sstep(Q.REVEAL - .1, Q.REVEAL + .3, t), beatK = [Q.c3, Q.c2, Q.c1].reduce((m, c) => Math.max(m, t >= c ? 1 - E.out(prog(t, c, c + .4)) : 0), 0);
+  [['A · 一样', 200], ['B · 标 90 美元的', 540], ['C · 标 10 美元的', 880]].forEach(([s, x]) => pill(s, x, 1290, oa, { size: 26, sc: 1 + .03 * beatK }));
+  ['3', '2', '1'].forEach((s, i) => {
+    const t0 = [Q.c3, Q.c2, Q.c1][i], v = prog(t, t0, t0 + 1.28); if (v <= 0 || v >= 1) return;
+    const k = 1.5 - .5 * E.outExpo(v * 2.5), al = 1 - sstep(.62, 1, v);
+    const bg = ctx.createRadialGradient(540, 900, 0, 540, 900, 230); bg.addColorStop(0, `rgba(6,7,11,${.88 * al})`); bg.addColorStop(1, 'rgba(6,7,11,0)'); ctx.fillStyle = bg; ctx.fillRect(300, 660, 480, 480);
+    ctx.save(); ctx.translate(540, 900); ctx.scale(k, k);
+    text(s, 0, 8, { font: SERIF, size: 210, weight: 900, align: 'center', color: CREAM, alpha: al, glow: 'rgba(255,240,220,.4)', blur: 30 });
+    ctx.restore();
+  });
+  ctx.restore();
+}
+
+// ======================================================================== ② 标题 · 同一瓶酒 · 价格是一种调料
+function sceneTitle(t) {
+  if (t < LIFT - .05 || t > 20.6) return;
+  const e = E.outExpo(prog(t, LIFT, LIFT + .9)), out = sstep(19.5, 20.2, t), sc = (1.45 - .45 * e) * (1 + .06 * out);
+  ctx.save(); ctx.translate(540, 900); ctx.scale(sc, sc); ctx.translate(-540, -900);
+  ctx.filter = e < .97 ? `blur(${((1 - e) * 18).toFixed(1)}px)` : 'none';
+  text('消费主义', 540, 900, { size: 166, weight: 900, align: 'center', ls: 30, alpha: sstep(LIFT, LIFT + .15, t) * (1 - out), glow: 'rgba(255,225,190,.25)', blur: 40 });
+  ctx.restore();
+  seriesTag(712, sstep(LIFT + .4, LIFT + 1.1, t) * (1 - out));
+  typeText('CONSUMERISM', 540, 1046, { size: 44, weight: 600, font: LAT, ls: 22, color: DIM, align: 'center', spread: 3 }, prog(t, LIFT + .5, LIFT + 1.6), 1 - out);
+  typeText('第六季 · 日常里的主义 ①', 540, 1118, { size: 28, weight: 500, ls: 10, color: '#6f7786', align: 'center', spread: 4 }, prog(t, LIFT + 1.1, LIFT + 2.0), 1 - out);
+}
+function scenePrice(t) {
+  if (t < 19.7 || t > PILL + .2) return;
+  const A = sstep(19.9, 20.5, t) * (1 - sstep(PILL - .6, PILL - .05, t));
+  if (A <= 0) return;
+  const D = A * (1 - sstep(31.3, 31.7, t));
+  if (D > 0) {
+    const S1 = D * (1 - sstep(23.7, 24.1, t));
+    if (S1 > 0) {                                                                                   // 同一瓶，倒进两个杯子
+      text('同一瓶', 540, 640, { font: SERIF, size: 52, weight: 900, align: 'center', color: CREAM, alpha: S1 });
+      ctx.save(); ctx.globalAlpha = S1; ctx.fillStyle = 'rgba(40,14,22,.96)'; ctx.strokeStyle = 'rgba(236,230,218,.6)'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.roundRect(500, 720, 80, 190, 14); ctx.moveTo(522, 720); ctx.lineTo(522, 670); ctx.lineTo(558, 670); ctx.lineTo(558, 720); ctx.fill(); ctx.stroke(); ctx.restore();
+      const lv = .15 + .4 * E.io(prog(t, 20.4, 22.4));
+      glass(330, 1250, .9, S1, lv); glass(750, 1250, .9, S1, lv);
+      tag(455, 930, .8, '$90', S1, { gold: true, rot: -.1 }); tag(875, 930, .8, '$10', S1, { rot: -.1 });
+      text('变的只有价格', 540, 1300, { font: SANS, size: 28, align: 'center', color: '#ffd2a0', alpha: S1 * sstep(21.8, 22.3, t) });
+    }
+    const S2 = D * sstep(24.0, 24.5, t);
+    if (S2 > 0) {                                                                                   // 价格是一种调料
+      text('买东西，也在买「感觉」', 540, 640, { font: SERIF, size: 52, weight: 900, align: 'center', color: CREAM, alpha: S2 * (1 - sstep(27.4, 27.8, t)) });
+      text('价格，是一种调料', 540, 640, { font: SERIF, size: 52, weight: 900, align: 'center', color: '#ffd2a0', alpha: S2 * sstep(27.8, 28.3, t), glow: `rgba(${O_RGB},.4)`, blur: 14 });
+      const tilt = -2.3 * E.io(prog(t, 27.9, 28.6)) + .1 * Math.sin(t * 9) * sstep(28.6, 28.8, t);
+      glass(540, 1270, 1.05, S2, .5, sstep(28.8, 30.0, t));
+      shaker(680, 820, S2, tilt, t);
+      if (t > 28.6) for (let i = 0; i < 30; i++) {                                                  // 撒下来的金粉
+        const p = ((t - 28.6) * 1.4 + i / 30) % 1, x = 600 - 50 * p + 20 * Math.sin(i * 7), y = 860 + 220 * p;
+        glow(x, y, 2.2, O_RGB, S2 * (1 - p) * sstep(28.6, 28.9, t), 3);
+      }
+    }
+  }
+  const F = A * sstep(31.6, 32.0, t);
+  typeText('消费主义的秘密', 540, 860, { ...big, size: 76, weight: 900 }, prog(t, 31.7, 32.6), F);
+  typeText('贵，让人觉得好', 540, 970, { size: 40, weight: 700, font: SERIF, align: 'center', color: '#ffd2a0', spread: 4 }, prog(t, 32.4, 33.2), F);
+}
+
+// ======================================================================== ③ 安慰剂：同一颗糖丸，换个标价
+function scenePill(t) {
+  if (t < PILL - .3 || t > BLIND + .2) return;
+  const A = sstep(PILL - .1, PILL + .5, t) * (1 - sstep(BLIND - .6, BLIND - .05, t));
+  if (A <= 0) return;
+  const bk = 1 - E.out(((t - PILL) / BEAT) % 1);
+  text('连药也一样', 540, 640, { font: SERIF, size: 52, weight: 900, align: 'center', color: CREAM, alpha: A * sstep(37.7, 38.2, t) * (1 - sstep(44.6, 45.0, t)) });
+  text('觉得疼痛减轻的人', 540, 640, { font: SERIF, size: 52, weight: 900, align: 'center', color: CREAM, alpha: A * sstep(45.0, 45.5, t) * (1 - sstep(48.6, 49.0, t)) });
+  ctx.save(); ctx.translate(540, 640); ctx.scale(1 + .03 * bk, 1 + .03 * bk);
+  text('糖丸没变，变的是标价', 0, 0, { font: SERIF, size: 52, weight: 900, align: 'center', color: '#ffd2a0', alpha: A * sstep(48.9, 49.4, t), glow: `rgba(${O_RGB},.5)`, blur: 16 }); ctx.restore();
+  const box = (x, label, gold, a) => {
+    ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = gold ? 'rgba(232,184,102,.14)' : 'rgba(201,204,211,.08)'; ctx.strokeStyle = gold ? '#e8b866' : 'rgba(201,204,211,.6)'; ctx.lineWidth = 3;
+    if (gold) { ctx.shadowColor = `rgba(${O_RGB},.5)`; ctx.shadowBlur = 20; }
+    ctx.beginPath(); ctx.roundRect(x - 140, 760, 280, 180, 18); ctx.fill(); ctx.stroke(); ctx.restore();
+    capsule(x - 40, 812, 1.05, a, gold ? '#e8b866' : '#c9ccd3', '#f3efe6'); capsule(x + 50, 832, 1.05, a, gold ? '#e8b866' : '#c9ccd3', '#f3efe6', .4);
+    text(label, x, 904, { font: SERIF, size: 34, weight: 900, align: 'center', color: gold ? '#ffd2a0' : '#c3cad6', alpha: a });
+  };
+  const B1 = A * sstep(41.0, 41.5, t);
+  box(320, '2.5 美元一颗', true, B1); box(760, '打折：1 毛钱', false, A * sstep(45.0, 45.5, t));
+  text('没有药效', 540, 990, { font: SANS, size: 26, align: 'center', color: '#6f7786', alpha: B1 });
+  const kb = E.out(prog(t, 45.4, 46.6)), kb2 = E.out(prog(t, 46.6, 47.8)), base = 1240;
+  const bar = (x, v, k, col, lab, a) => {
+    if (a <= 0) return;
+    ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = col; ctx.fillRect(x - 60, base - 2.4 * v * k, 120, 2.4 * v * k); ctx.restore();
+    text(lab, x, base - 2.4 * v * k - 24, { font: SERIF, size: 38, weight: 900, align: 'center', color: CREAM, alpha: a * sstep(.7, 1, k) });
+  };
+  if (kb > 0) {
+    ctx.save(); ctx.globalAlpha = A; ctx.strokeStyle = 'rgba(236,230,218,.35)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(180, base); ctx.lineTo(900, base); ctx.stroke(); ctx.restore();
+    bar(320, 85 * .9, kb, ORANGE, '约 85%', A); bar(760, 61 * .9, kb2, '#9aa3b2', '约 61%', A);
+  }
+}
+
+// ======================================================================== ④ 盲品：遮住价格，6000 多次
+function sceneBlind(t) {
+  if (t < BLIND - .3 || t > COVER + .2) return;
+  const A = sstep(BLIND - .1, BLIND + .5, t) * (1 - sstep(COVER - .7, COVER - .1, t));
+  if (A <= 0) return;
+  const S = A * (1 - sstep(57.6, 58.0, t));
+  if (S > 0) {
+    text('遮住价格', 540, 640, { font: SERIF, size: 52, weight: 900, align: 'center', color: CREAM, alpha: S * sstep(53.7, 54.2, t) });
+    glass(330, 1230, 1, S); glass(750, 1230, 1, S);
+    const cov = E.out(prog(t, 54.6, 55.4));
+    tag(475, 880, 1, '$90', S * (1 - cov), { gold: true, rot: -.1 }); tag(895, 880, 1, '$10', S * (1 - cov), { rot: -.1 });
+    for (const x of [475, 895]) {
+      ctx.save(); ctx.globalAlpha = S * cov; ctx.fillStyle = '#1b1c22'; ctx.strokeStyle = 'rgba(236,230,218,.5)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.roundRect(x - 66, 916, 132, 136, 10); ctx.fill(); ctx.stroke(); ctx.restore();
+      text('?', x, 990, { font: SERIF, size: 64, weight: 900, align: 'center', color: '#ffd2a0', alpha: S * cov });
+    }
+  }
+  const G = A * sstep(57.9, 58.4, t);
+  if (G <= 0) return;
+  text('6000 多次盲品', 540, 640, { font: SERIF, size: 52, weight: 900, align: 'center', color: '#ffd2a0', alpha: G, glow: `rgba(${O_RGB},.4)`, blur: 14 });
+  ctx.save(); ctx.globalAlpha = G; ctx.strokeStyle = 'rgba(236,230,218,.35)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(200, 760); ctx.lineTo(200, 1180); ctx.lineTo(880, 1180); ctx.stroke(); ctx.restore();
+  text('喜欢', 200, 736, { font: SERIF, size: 28, weight: 900, align: 'center', color: CREAM, alpha: G });
+  text('价格 →', 860, 1222, { font: SANS, size: 26, align: 'right', color: DIM, alpha: G });
+  const r = mulberry(4400), n = Math.floor(90 * E.out(prog(t, 58.2, 59.6)));
+  for (let i = 0; i < 90; i++) {
+    const x = 230 + r() * 620, y = 960 + (x - 540) * .05 + (r() + r() + r() - 1.5) * 220;
+    if (i < n) { ctx.save(); ctx.globalAlpha = G * .7; ctx.fillStyle = '#c3cad6'; ctx.beginPath(); ctx.arc(x, y, 4, 0, TAU); ctx.fill(); ctx.restore(); }
+  }
+  drawOn(() => { ctx.moveTo(230, 945); ctx.lineTo(860, 976); }, 640, E.io(prog(t, 60.8, 61.8)), ORANGE, 5, G, `rgba(${O_RGB},.6)`);
+  text('普通人：没有更喜欢贵的', 540, 1290, { font: SERIF, size: 34, weight: 900, align: 'center', color: '#ffd2a0', alpha: G * sstep(61.4, 61.9, t) });
+}
+
+// ======================================================================== ⑤ 遮住价格：享受是真的，但来自价格
+function sceneCover(t) {
+  if (t < COVER - .2 || t > CLIMAX + .3) return;
+  const A = sstep(COVER + .2, COVER + 1.0, t) * (1 - sstep(CLIMAX - .4, CLIMAX + .1, t));
+  if (A <= 0) return;
+  const hd = (s, t0, t1, col, gl) => text(s, 540, 640, { font: SERIF, size: 52, weight: 900, align: 'center', color: col, alpha: A * sstep(t0, t0 + .5, t) * (t1 ? 1 - sstep(t1, t1 + .4, t) : 1), glow: gl, blur: 14 });
+  hd('享受，是真的', 64.5, 67.6, '#7fe3d3', `rgba(${T_RGB},.4)`);
+  hd('只是来自价格', 67.9, 71.9, '#ffd2a0');
+  hd('先遮住价格', 72.3, 76.0, CREAM);
+  hd('它，还是它的标价？', 76.4, 0, '#ffd2a0', `rgba(${O_RGB},.4)`);
+  const flip = Math.cos(PI * E.io(prog(t, 72.6, 73.6)));
+  glass(470, 1250, 1.05, A, .55, sstep(64.6, 65.6, t) * (1 - .6 * sstep(72.4, 73.4, t)));
+  tag(640, 860, 1.25, '$90', A, { gold: flip > 0, rot: -.15 + .03 * Math.sin(t * 1.5), flip });
+  if (flip < 0) {                                                                                   // 价签背面：空白
+    ctx.save(); ctx.translate(640, 860); ctx.rotate(-.15 + .03 * Math.sin(t * 1.5)); ctx.translate(0, 40); ctx.scale(1.25 * -flip, 1.25);
+    text('?', 0, 82, { font: SERIF, size: 44, weight: 900, align: 'center', color: '#15161c', alpha: A }); ctx.restore();
+  }
+  const ar = E.io(prog(t, 68.2, 69.0)) * (1 - sstep(71.9, 72.3, t));
+  drawOn(() => { ctx.moveTo(600, 1020); ctx.quadraticCurveTo(560, 1060, 520, 1040); }, 120, ar, '#ffd2a0', 4, A);
+}
+
+// ======================================================================== ⑥ 价值：价签掉下来，酒还在
+function sceneValue(t) {
+  if (t < CLIMAX - .1) return;
+  const A = sstep(CLIMAX - .1, CLIMAX + .2, t);
+  const fl = 1 - prog(t, CLIMAX, CLIMAX + .6);
+  if (t > CLIMAX && fl > 0) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = `rgba(255,214,170,${.38 * fl * fl})`; ctx.fillRect(0, 0, W, H); ctx.restore(); }
+  const fl2 = 1 - prog(t, FINAL, FINAL + .7);
+  if (t > FINAL && fl2 > 0) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = `rgba(255,226,190,${.32 * fl2 * fl2})`; ctx.fillRect(0, 0, W, H); ctx.restore(); }
+  const fin = sstep(FINAL, FINAL + 1.5, t);
+  warmth(A * (1 + .5 * fin), 540, 1060, 760);
+  const drop = E.inExpo(prog(t, CLIMAX + 1.0, CLIMAX + 2.2));
+  glass(540, 1280, 1.2, A, .55, .5 + .5 * fin + .2 * Math.sin(t * 2));
+  tag(680 + 40 * drop, 850 + 420 * drop, 1.1, '$90', A * (1 - sstep(.7, 1, drop)), { gold: true, rot: -.15 + 1.2 * drop });
+  if (fin > 0) for (let i = 0; i < 24; i++) {
+    const r = mulberry(4500 + i), x = 380 + r() * 320, sp = 30 + r() * 40, p = ((t - FINAL) * sp / 420 + r()) % 1;
+    glow(x + 16 * Math.sin(t + i), 1150 - p * 420, 2 + 2 * r(), O_RGB, fin * (1 - p) * .8, 3);
+  }
+  const qa = 1 - sstep(92.7, 93.3, t);
+  typeText('如今的人，知道一切东西的', 540, 430, { ...big, size: 50, weight: 900 }, prog(t, CLIMAX + .3, CLIMAX + 1.4), qa);
+  typeText('「价格」，却不知道任何', 540, 520, { ...big, size: 50, weight: 900 }, prog(t, CLIMAX + 1.5, CLIMAX + 2.4), qa);
+  typeText('东西的「价值」。', 540, 614, { ...big, size: 64, weight: 900, glow: `rgba(${O_RGB},.45)`, glowBlur: 36 }, prog(t, CLIMAX + 2.5, CLIMAX + 3.3), qa);
+  typeText('—— 王尔德《道林·格雷的画像》', 540, 694, { size: 26, weight: 500, font: SANS, align: 'center', color: DIM, ls: 4, spread: 5 }, prog(t, CLIMAX + 3.5, CLIMAX + 4.1), qa);
+  typeText('遮住价格，', 540, 480, { ...big, size: 56, weight: 700 }, prog(t, 93.4, 94.4), 1);
+  typeText('再尝一口。', 540, 596, { ...big, size: 84, weight: 900, glow: `rgba(${O_RGB},.5)`, glowBlur: 40 }, prog(t, FINAL, FINAL + .9), 1);
+}
+
+// ======================================================================== 世界层
+function WORLD(t) {
+  space();
+  starfield(t, STAR_A(t));
+  sceneTest(t); sceneTitle(t); scenePrice(t); scenePill(t); sceneBlind(t); sceneCover(t); sceneValue(t);
+}
+function SAMPLES(T) {
+  if ((T > 7.9 && T < 9.2) || (T > 14.8 && T < LIFT + 1.2)) return 4;
+  if ((T > CLIMAX - .2 && T < CLIMAX + 1.4) || (T > FINAL - .2 && T < FINAL + 1.2)) return 5;
+  return 3;
+}
+function BLOOM_K(T) { return .42 + .18 * win(T, LIFT, LIFT + 4, .2, .8) + .1 * win(T, 64.6, 70, .5, .5) + .22 * win(T, CLIMAX, TOTAL, .2, 1) + .12 * win(T, FINAL, TOTAL, .2, 1); }
+function OVER(T) {
+  stamp('2008', 'Plassmann et al. · PNAS', 8.2, 35.3, T);
+  stamp('2008', 'Waber, Shiv, Carmon & Ariely · JAMA', 37.6, 52.9, T);
+  stamp('2008', 'Goldstein et al. · J Wine Econ', 53.6, 63.4, T);
+}
+function MASTER(T) { return 1; }
+function INIT() {
+  const r = mulberry(44);
+  STARS = Array.from({ length: 700 }, () => { const b = Math.pow(r(), 3); return { x: r() * W, y: r() * H, z: .35 + r() * .65, b: .22 + .78 * b, s: .8 + 2.0 * b, tw: .6 + r() * 2.2, ph: r() * TAU, warm: r() < .2 }; });
+}
+
+// ======================================================================== 音效提示表（音高都在 C 小调里，最后一个和弦是 C 大调）
+const NOTE = { G3: 196.00, C4: 261.63, Eb4: 311.13, E4: 329.63, G4: 392.00, Ab4: 415.30, C5: 523.25, Eb5: 622.25, E5: 659.25, G5: 783.99, C6: 1046.50, Eb6: 1244.51, E6: 1318.51 };
+const CM_SHIM = [NOTE.Eb6, NOTE.G5, NOTE.C6, NOTE.C5, NOTE.G4], CMAJ_SHIM = [NOTE.E6, NOTE.G5, NOTE.C6, NOTE.C5, NOTE.G4], CM_SWELL = [65.41, 98.00, 130.81, 155.56, 196.00];
+function CUES() {
+  const c = [];
+  c.push([.6, 'tink', { f: NOTE.G5, gain: .05 }], [1.4, 'tink', { f: NOTE.C6, gain: .05 }]);
+  [Q.c3, Q.c2, Q.c1].forEach(t => c.push([t, 'tick', { gain: .55 }]));
+  c.push([Q.REVEAL, 'whoosh', { dur: .5, gain: .22 }], [Q.REVEAL + .05, 'chord', { f: [NOTE.C4, NOTE.Eb4, NOTE.G4], gain: .22 }], [Q.REVEAL + .1, 'tink', { f: NOTE.G5, gain: .1 }]);
+  c.push([11.0, 'swish', { gain: .08 }], [11.3, 'shimmer', { f: [NOTE.G5, NOTE.C6, NOTE.Eb5], gain: .1 }]);
+  c.push([LIFT - 1.33, 'riser', { dur: 1.33, gain: .38 }], [LIFT, 'boom', { gain: .55 }], [LIFT, 'whoosh', { dur: .9, gain: .32 }], [LIFT + .1, 'shimmer', { f: CM_SHIM, gain: .28 }]);
+  c.push([20.4, 'drone', { dur: 2.0, gain: .04 }], [24.1, 'swish', { gain: .07 }], [28.6, 'dust', { dur: 1.6, gain: .07 }], [29.0, 'tink', { f: NOTE.Eb6, gain: .06 }], [31.7, 'page', { gain: .18 }]);
+  c.push([PILL, 'whoosh', { dur: .5, gain: .25 }], [41.0, 'thunk', { gain: .08 }], [45.0, 'thunk', { gain: .07 }], [45.4, 'bar', { f0: 196, f1: 392, dur: 1.2, gain: .08 }], [46.6, 'bar', { f0: 196, f1: 311, dur: 1.2, gain: .08 }]);
+  c.push([49.0, 'chord', { f: [NOTE.C4, NOTE.Eb4, NOTE.G4], gain: .1 }], [49.1, 'tink', { f: NOTE.C6, gain: .07 }]);
+  c.push([BLIND, 'whoosh', { dur: .5, gain: .22 }], [54.6, 'slap', { gain: .08 }], [58.2, 'dust', { dur: 1.4, gain: .06 }], [60.8, 'swish', { gain: .08 }], [61.5, 'tink', { f: NOTE.G5, gain: .07 }]);
+  c.push([64.6, 'tink', { f: NOTE.Eb5, gain: .06 }], [68.2, 'swish', { gain: .06 }], [72.6, 'swish', { gain: .1 }], [73.4, 'tink', { f: NOTE.C5, gain: .07 }]);
+  c.push([76.4, 'page', { gain: .2 }], [76.6, 'swell', { dur: CLIMAX - 76.6, f: CM_SWELL, gain: .28 }]);
+  c.push([CLIMAX, 'boom', { gain: .6 }], [CLIMAX, 'shimmer', { f: CM_SHIM, gain: .42 }], [CLIMAX + .4, 'air', { dur: 10, hum: 65.41, gain: .14 }], [CLIMAX + 2.1, 'thud', { gain: .14 }]);
+  c.push([FINAL - 2.6, 'revcym', { dur: 2.6, gain: .28 }], [FINAL, 'boom', { gain: .5 }], [FINAL, 'shimmer', { f: CMAJ_SHIM, gain: .45 }], [FINAL + .1, 'chord', { f: [NOTE.C4, NOTE.E4, NOTE.G4], gain: .2 }]);
+  return c.sort((a, b) => a[0] - b[0]);
+}
