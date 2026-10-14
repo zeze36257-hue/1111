@@ -1,0 +1,380 @@
+// ======================================================================== No.62 面子主义：示弱，真的很丢脸吗？
+// 第七季·人和人之间的主义 ⑨。开头是一道选择题：主动认错、先开口道歉，自己觉得怎样？别人又怎么看？（Bruk, Scholl & Bless, 2018）
+// 音乐：原创配乐（music.py，升 G 小调 90 BPM），从第 0 秒放到最后一秒，不剪不断。高音动机每小节往上爬，滑一下，再站起来。
+// 画面的每个段落都落在配乐的小节线上（1 小节 = 2.667 秒）：
+//   16.0 标题 · 37.33 洒咖啡（每拍一个鼓点） · 53.33 求助（紧张） · 64.0 帮我一下（只剩钢琴） · 80.0 高潮：日月之食 · 96.0 升 G 大调
+const BEAT = 60 / 90, BAR = BEAT * 4, BT = n => n * BEAT;
+const LIFT = BT(24), SPILL = BT(56), HELP = BT(80), ASK = BT(96), CLIMAX = BT(120), FINAL = BT(144), TOTAL = BT(156);
+const SECTIONS = [['认错', 0, LIFT], ['美丽的乱', LIFT, SPILL], ['洒咖啡', SPILL, HELP], ['求助', HELP, ASK], ['帮我一下', ASK, CLIMAX], ['日月之食', CLIMAX, TOTAL]];
+const SERIES = '黑猫不说话 · 心理学 No.62';
+const Q = { c3: BT(6), c2: BT(8), c1: BT(10), REVEAL: BT(12), TIMES: BT(16) };
+
+const LINES = [
+  [0.15, 3.9, '主动承认一个错误，或者先开口道歉。'],
+  [4.1, 7.6, '你觉得自己显得怎样？别人又怎么看？先猜一个。'],
+  [8.2, 10.4, '答案是 B：自己觉得丢脸，别人觉得勇敢。'],
+  [10.8, 13.3, '研究者做了七个实验：表白、求助、露出不完美，'],
+  [13.6, 15.7, '换成别人来做，大家都更欣赏。'],
+  [16.3, 19.6, '心理学家叫它「美丽的混乱效应」：'],
+  [19.9, 23.7, '自己示弱时，满脑子是细节：脸红、结巴、被笑话；'],
+  [24.0, 27.4, '看别人示弱时，看到的是整体：真诚、有勇气。'],
+  [27.7, 31.3, '同一件事，在自己眼里是狼狈，在别人眼里是真实。'],
+  [31.6, 35.3, '这就是「面子主义」：宁可撑着，也不肯露一点。'],
+  [37.6, 40.6, '还有个老实验：'],
+  [40.9, 44.6, '一个答题高手，录完节目，不小心洒了一身咖啡；'],
+  [44.9, 48.6, '听录音的人，反而更喜欢他了。'],
+  [48.9, 52.9, '有本事的人出一点小丑，反而更像个人。'],
+  [53.6, 57.6, '求助也一样。'],
+  [57.9, 60.6, '我们以为开口求人，多半会被拒绝；'],
+  [60.8, 63.4, '实际愿意帮忙的人，大约是你猜的两倍。'],
+  [64.3, 67.6, '所以，撑不住的时候，'],
+  [67.9, 71.9, '可以试着说一句：这个我不太会，能帮我一下吗？'],
+  [72.2, 75.9, '你丢的面子，没有你想的那么多。'],
+  [76.3, 79.6, '两千多年前，子贡说：'],
+  [84.9, 88.6, '犯错的时候，大家都看见了；'],
+  [88.9, 92.6, '改过来的时候，大家也都看见了。'],
+  [98.4, 103.0, '评论区：你最近一次放下面子，是为了什么？'],
+];
+const BIGLINES = [
+  [80.2, 92.6, '「君子之过也，如日月之食焉：过也，人皆见之；更也，人皆仰之。」——《论语》'],
+  [93.4, 98.0, '露一点不完美，人反而更近。'],
+];
+
+// ======================================================================== 共用
+function space() {
+  const g = ctx.createRadialGradient(540, 820, 80, 540, 820, 1500);
+  g.addColorStop(0, '#12141c'); g.addColorStop(.55, '#08090f'); g.addColorStop(1, '#020305');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
+let STARS = [];
+function starfield(t, A) {
+  if (A <= 0) return;
+  ctx.save();
+  for (const s of STARS) {
+    let x = s.x - t * 3 * s.z; x = ((x + 20) % (W + 40) + W + 40) % (W + 40) - 20;
+    const y = s.y - t * 1.2 * s.z, al = A * s.b * (.72 + .28 * Math.sin(t * s.tw + s.ph));
+    if (al <= .012 || y < -6 || y > H + 6) continue;
+    ctx.globalAlpha = Math.min(1, al); ctx.fillStyle = s.warm ? '#ffdcae' : '#e2eaff'; ctx.fillRect(x - s.s / 2, y - s.s / 2, s.s, s.s);
+  }
+  ctx.restore();
+}
+const STAR_A = track([[0, .08], [LIFT - .4, .08], [LIFT, .5], [LIFT + 3, .25], [19.8, .25], [20.6, .12], [24, .12], [25, .2], [SPILL - .5, .2], [SPILL, .06], [ASK, .06],
+  [ASK + 1, .14], [CLIMAX - .2, .14], [CLIMAX + .4, .7], [TOTAL, .7]]);
+function warmth(a, x = 540, y = 980, r = 900, rgb = '255,170,90') {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, `rgba(${rgb},${.16 * a})`); g.addColorStop(1, `rgba(${rgb},0)`);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); ctx.restore();
+}
+function seriesTag(y, a) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a;
+  font(30, 500); ctx.letterSpacing = '6px'; const w = ctx.measureText(SERIES).width;
+  text(SERIES, W / 2, y, { size: 30, weight: 500, align: 'center', color: ORANGE, ls: 6 });
+  ctx.strokeStyle = `rgba(${O_RGB},.5)`; ctx.lineWidth = 1.5;
+  for (const k of [-1, 1]) { ctx.beginPath(); ctx.moveTo(W / 2 + k * (w / 2 + 24), y); ctx.lineTo(W / 2 + k * (w / 2 + 84), y); ctx.stroke(); }
+  ctx.restore();
+}
+function drawOn(build, len, k, col, lw, a = 1, glowCol) {
+  if (k <= 0 || a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a; ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  if (glowCol) { ctx.shadowColor = glowCol; ctx.shadowBlur = 14; }
+  ctx.setLineDash([len * clamp(k), len + 10]); ctx.beginPath(); build(); ctx.stroke(); ctx.restore();
+}
+function you(x, y, t, a = 1, r = 9) {
+  if (a <= 0) return;
+  const pulse = (t * .75) % 1;
+  ctx.save(); ctx.globalAlpha = a * (1 - pulse) * .45; ctx.strokeStyle = ORANGE; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(x, y, r + 4 + pulse * 44, 0, TAU); ctx.stroke(); ctx.restore();
+  glow(x, y, r, O_RGB, a, 6);
+}
+function pill(s, x, y, a, o = {}) {
+  if (a <= 0) return;
+  const size = o.size || 30; font(size, o.weight || 500, SANS); const w = Math.max(o.minW || 0, ctx.measureText(s).width + 64);
+  ctx.save(); ctx.globalAlpha *= a; ctx.translate(x, y); ctx.scale(o.sc || 1, o.sc || 1);
+  if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = 28; }
+  ctx.fillStyle = o.fill || 'rgba(255,255,255,.07)'; ctx.beginPath(); ctx.roundRect(-w / 2, -size * 1.1, w, size * 2.2, size * 1.1); ctx.fill();
+  ctx.shadowColor = 'rgba(0,0,0,0)'; ctx.strokeStyle = o.stroke || 'rgba(255,255,255,.18)'; ctx.lineWidth = 1.6; ctx.stroke();
+  text(s, 0, 1, { font: SANS, weight: o.weight || 500, size, align: 'center', color: o.color || CREAM });
+  ctx.restore();
+}
+const big = { align: 'center', spread: 3, blur: 14, rise: 18 };
+
+// ======================================================================== 人、镜子、标签、咖啡杯、箱子、日食
+const PINK = '#f0a0a0', GOLD = '#ffd2a0', TEALC = '#7fe3d3', WARMC = '#ffb36b', GREYP = '#9aa3b2';
+function person(x, y, s, a, col = CREAM, bow = 0) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a; ctx.translate(x, y); ctx.scale(s, s); ctx.strokeStyle = col; ctx.lineWidth = 3 / Math.max(.6, s); ctx.fillStyle = 'rgba(16,17,23,.95)';
+  ctx.shadowColor = col; ctx.shadowBlur = 8;
+  ctx.save(); ctx.translate(0, -30); ctx.rotate(bow); ctx.translate(0, 30);
+  ctx.beginPath(); ctx.arc(0, -84, 22, 0, TAU); ctx.fill(); ctx.stroke(); ctx.restore();
+  ctx.beginPath(); ctx.moveTo(-40, 30); ctx.lineTo(-40, -22); ctx.quadraticCurveTo(-40, -52, -12, -54); ctx.lineTo(12, -54); ctx.quadraticCurveTo(40, -52, 40, -22); ctx.lineTo(40, 30); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.restore();
+}
+function say(s, x, y, a, col = CREAM, size = 28) {
+  if (a <= 0) return;
+  font(size, 700, SANS); const w = ctx.measureText(s).width + 44, h = size * 1.9;
+  ctx.save(); ctx.globalAlpha *= a; ctx.fillStyle = 'rgba(30,31,40,.95)'; ctx.strokeStyle = col; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.roundRect(x - w / 2, y - h / 2, w, h, h / 2); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x - 10, y + h / 2 - 2); ctx.lineTo(x - 22, y + h / 2 + 18); ctx.lineTo(x + 6, y + h / 2 - 2); ctx.fill(); ctx.restore();
+  text(s, x, y + 1, { font: SANS, size, weight: 700, align: 'center', color: col, alpha: a });
+}
+function mirror(x, y, w, h, a, col, glowK = 0) {                                                         // 一面椭圆镜子
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a; if (glowK > 0) { ctx.shadowColor = col; ctx.shadowBlur = 24 * glowK; }
+  ctx.fillStyle = 'rgba(30,34,46,.92)'; ctx.strokeStyle = col; ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.ellipse(x, y, w / 2, h / 2, 0, 0, TAU); ctx.fill(); ctx.stroke(); ctx.shadowBlur = 0;
+  ctx.strokeStyle = 'rgba(255,255,255,.12)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x - w * .25, y - h * .25); ctx.lineTo(x - w * .1, y - h * .38); ctx.stroke(); ctx.restore();
+}
+function mug(x, y, s, a, tilt = 0) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a; ctx.translate(x, y); ctx.rotate(tilt); ctx.scale(s, s); ctx.fillStyle = 'rgba(236,230,218,.92)'; ctx.strokeStyle = CREAM; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.roundRect(-22, -26, 44, 52, 6); ctx.fill(); ctx.beginPath(); ctx.arc(26, 0, 12, -PI / 2, PI / 2); ctx.stroke();
+  ctx.fillStyle = '#6b4226'; ctx.fillRect(-18, -24, 36, 8); ctx.restore();
+}
+function mixc(a, b, k) {
+  const p = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)), A2 = p(a), B2 = p(b);
+  return '#' + A2.map((v, i) => Math.round(lerp(v, B2[i], clamp(k, 0, 1))).toString(16).padStart(2, '0')).join('');
+}
+
+// ======================================================================== ① 认错（0–16）
+function sceneTest(t) {
+  if (t > LIFT + .1) return;
+  const push = E.inExpo(prog(t, 15.0, LIFT)), fade = 1 - sstep(15.5, LIFT, t);
+  ctx.save(); ctx.translate(540, 900); ctx.scale(1 + 1.4 * push, 1 + 1.4 * push); ctx.translate(-540, -900); ctx.globalAlpha = fade;
+  if (push > .02) ctx.filter = `blur(${(push * 16).toFixed(1)}px)`;
+  const qOut = sstep(Q.REVEAL - .1, Q.REVEAL + .4, t);
+  typeText('主动认错：自己觉得怎样？别人呢？', 540, 452, { ...big, size: 40, weight: 700 }, 1, 1 - qOut);
+  typeText('丢脸，还是勇敢？', 540, 560, { ...big, size: 80, weight: 900, glow: 'rgba(255,225,190,.25)', glowBlur: 30 }, 1, 1 - qOut);
+  const rv = sstep(Q.REVEAL, Q.REVEAL + .5, t), lo = sstep(10.8, 11.2, t);
+  const my = lerp(960, 900, lo), mh = lerp(320, 240, lo);
+  mirror(300, my, 260, mh, 1, rv > 0 ? mixc('#6f7786', PINK, rv) : 'rgba(195,202,214,.7)', rv * .6);
+  mirror(780, my, 260, mh, 1, rv > 0 ? mixc('#6f7786', GOLD, rv) : 'rgba(195,202,214,.7)', rv);
+  person(300, my + 70 * (1 - .25 * lo), .7 * (1 - .2 * lo), 1, rv > 0 ? PINK : CREAM, -.18 * (1 - rv));
+  person(780, my + 70 * (1 - .25 * lo), .7 * (1 - .2 * lo), 1, rv > 0 ? GOLD : CREAM, 0);
+  text('我眼中的我', 300, my + mh / 2 + 40, { font: SANS, size: 26, align: 'center', color: DIM, alpha: 1 });
+  text('别人眼中的我', 780, my + mh / 2 + 40, { font: SANS, size: 26, align: 'center', color: DIM, alpha: 1 });
+  text('?', 300, my - mh / 2 + 70, { font: SERIF, size: 56, weight: 900, align: 'center', color: '#6f7786', alpha: 1 - rv });
+  text('?', 780, my - mh / 2 + 70, { font: SERIF, size: 56, weight: 900, align: 'center', color: '#6f7786', alpha: 1 - rv });
+  pill('丢脸', 300, my - mh / 2 - 20, rv * (1 - lo), { size: 30, stroke: 'rgba(240,160,160,.8)', color: PINK });
+  pill('勇敢', 780, my - mh / 2 - 20, rv * (1 - lo), { size: 30, stroke: `rgba(${O_RGB},.9)`, color: GOLD, glow: `rgba(${O_RGB},.5)` });
+  say('是我弄错了，对不起', 540, 790, (1 - qOut) * sstep(.4, .8, t), CREAM, 28);
+  if (lo > 0) {                                                                                           // 三种情境，每种两根小柱子：自己评 vs 别人评
+    [['表白', 210], ['求助', 540], ['露出不完美', 870]].forEach(([s, x], i) => {
+      const a = lo * sstep(11.0 + i * .4, 11.4 + i * .4, t), base = 1240, k = E.out(prog(t, 11.1 + i * .4, 11.9 + i * .4));
+      ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = PINK; ctx.fillRect(x - 56, base - 70 * k, 48, 70 * k); ctx.fillStyle = WARMC; ctx.fillRect(x + 8, base - 150 * k, 48, 150 * k); ctx.restore();
+      text(s, x, base + 36, { font: SANS, size: 26, align: 'center', color: CREAM, alpha: a });
+    });
+    text('■ 自己做时的评价   ■ 别人做时的评价（示意）', 540, 1300, { font: SANS, size: 22, align: 'center', color: '#6f7786', alpha: lo });
+  }
+  text('B · 自己丢脸，别人勇敢', 540, 560, { font: SERIF, size: 60, weight: 900, align: 'center', color: GOLD, alpha: rv * (1 - sstep(10.6, 11.0, t)), glow: `rgba(${O_RGB},.5)`, blur: 22 });
+  text('换成别人，都更欣赏', 540, 560, { font: SERIF, size: 56, weight: 900, align: 'center', color: GOLD, alpha: sstep(10.9, 11.4, t), glow: `rgba(${O_RGB},.4)`, blur: 14 });
+  const oa = 1 - sstep(Q.REVEAL - .1, Q.REVEAL + .3, t), beatK = [Q.c3, Q.c2, Q.c1].reduce((m, c) => Math.max(m, t >= c ? 1 - E.out(prog(t, c, c + .4)) : 0), 0);
+  [['A · 都觉得丢脸', 190], ['B · 自己丢脸，别人勇敢', 540], ['C · 都觉得勇敢', 890]].forEach(([s, x]) => pill(s, x, 1290, oa, { size: 24, sc: 1 + .03 * beatK }));
+  ['3', '2', '1'].forEach((s, i) => {
+    const t0 = [Q.c3, Q.c2, Q.c1][i], v = prog(t, t0, t0 + 1.28); if (v <= 0 || v >= 1) return;
+    const k = 1.5 - .5 * E.outExpo(v * 2.5), al = 1 - sstep(.62, 1, v);
+    const bg = ctx.createRadialGradient(540, 900, 0, 540, 900, 230); bg.addColorStop(0, `rgba(6,7,11,${.88 * al})`); bg.addColorStop(1, 'rgba(6,7,11,0)'); ctx.fillStyle = bg; ctx.fillRect(300, 660, 480, 480);
+    ctx.save(); ctx.translate(540, 900); ctx.scale(k, k);
+    text(s, 0, 8, { font: SERIF, size: 210, weight: 900, align: 'center', color: CREAM, alpha: al, glow: 'rgba(255,240,220,.4)', blur: 30 });
+    ctx.restore();
+  });
+  ctx.restore();
+}
+
+// ======================================================================== ② 标题 · 美丽的混乱
+function sceneTitle(t) {
+  if (t < LIFT - .05 || t > 20.6) return;
+  const e = E.outExpo(prog(t, LIFT, LIFT + .9)), out = sstep(19.5, 20.2, t), sc = (1.45 - .45 * e) * (1 + .06 * out);
+  ctx.save(); ctx.translate(540, 900); ctx.scale(sc, sc); ctx.translate(-540, -900);
+  ctx.filter = e < .97 ? `blur(${((1 - e) * 18).toFixed(1)}px)` : 'none';
+  text('面子主义', 540, 900, { size: 166, weight: 900, align: 'center', ls: 30, alpha: sstep(LIFT, LIFT + .15, t) * (1 - out), glow: 'rgba(255,225,190,.25)', blur: 40 });
+  ctx.restore();
+  seriesTag(712, sstep(LIFT + .4, LIFT + 1.1, t) * (1 - out));
+  typeText('SAVING FACE', 540, 1046, { size: 44, weight: 600, font: LAT, ls: 22, color: DIM, align: 'center', spread: 3 }, prog(t, LIFT + .5, LIFT + 1.6), 1 - out);
+  typeText('第七季 · 人和人之间的主义 ⑨', 540, 1118, { size: 28, weight: 500, ls: 10, color: '#6f7786', align: 'center', spread: 4 }, prog(t, LIFT + 1.1, LIFT + 2.0), 1 - out);
+}
+function sceneMess(t) {
+  if (t < 19.7 || t > SPILL + .2) return;
+  const A = sstep(19.9, 20.5, t) * (1 - sstep(SPILL - .6, SPILL - .05, t));
+  if (A <= 0) return;
+  const D = A * (1 - sstep(31.3, 31.7, t));
+  if (D > 0) {
+    text('美丽的混乱效应', 540, 640, { font: SERIF, size: 56, weight: 900, align: 'center', color: GOLD, alpha: D * (1 - sstep(23.8, 24.2, t)), glow: `rgba(${O_RGB},.4)`, blur: 14 });
+    typeText('BEAUTIFUL MESS EFFECT', 540, 724, { size: 26, weight: 600, font: LAT, ls: 8, color: DIM, align: 'center', spread: 2 }, prog(t, 20.2, 21.0), D * (1 - sstep(23.8, 24.2, t)));
+    text('别人看到：真诚、勇气', 540, 640, { font: SERIF, size: 54, weight: 900, align: 'center', color: WARMC, alpha: D * sstep(24.1, 24.6, t) * (1 - sstep(27.4, 27.8, t)) });
+    text('狼狈，还是真实？', 540, 640, { font: SERIF, size: 56, weight: 900, align: 'center', color: GOLD, alpha: D * sstep(27.8, 28.3, t), glow: `rgba(${O_RGB},.4)`, blur: 14 });
+    const z = 1 - .45 * E.io(prog(t, 24.0, 25.2)), split = sstep(27.8, 28.4, t);                            // 先是贴得很近的“自己视角”，再拉远成“别人视角”
+    const col = split > 0 ? CREAM : mixc(PINK, WARMC, sstep(24.0, 24.8, t));
+    person(540, 1140, 1.9 * z, D * (1 - split), col, -.15 * (1 - sstep(24.0, 24.8, t)));
+    const near = D * sstep(20.2, 20.6, t) * (1 - sstep(23.8, 24.2, t));
+    [['脸红', 330, 860], ['结巴', 760, 900], ['被笑话？', 300, 1180], ['说错了？', 790, 1170]].forEach(([s, x, y], i) => {
+      const jit = 4 * Math.sin(t * 9 + i * 2);
+      pill(s, x + jit, y, near * sstep(20.6 + i * .5, 20.9 + i * .5, t), { size: 30, stroke: 'rgba(240,160,160,.8)', color: PINK });
+    });
+    const far = D * sstep(24.4, 24.8, t) * (1 - sstep(27.4, 27.8, t));
+    if (far > 0) { glow(540, 1000, 80, O_RGB, far * .5, 10); pill('真诚', 360, 930, far, { size: 32, stroke: `rgba(${O_RGB},.8)`, color: GOLD }); pill('有勇气', 720, 930, far * sstep(25.0, 25.4, t), { size: 32, stroke: `rgba(${O_RGB},.8)`, color: GOLD }); }
+    if (split > 0) {                                                                                        // 同一个人，左半边粉（狼狈），右半边金（真实）
+      ctx.save(); ctx.beginPath(); ctx.rect(0, 0, 540, H); ctx.clip(); person(540, 1140, 1.9 * z, D * split, PINK); ctx.restore();
+      ctx.save(); ctx.beginPath(); ctx.rect(540, 0, 540, H); ctx.clip(); person(540, 1140, 1.9 * z, D * split, GOLD); ctx.restore();
+      text('自己眼里：狼狈', 280, 1260, { font: SANS, size: 28, align: 'center', color: PINK, alpha: D * split });
+      text('别人眼里：真实', 800, 1260, { font: SANS, size: 28, align: 'center', color: GOLD, alpha: D * split });
+    }
+  }
+  const F = A * sstep(31.6, 32.0, t);
+  typeText('面子主义', 540, 860, { ...big, size: 80, weight: 900 }, prog(t, 31.7, 32.5), F);
+  typeText('宁可撑着，也不肯露一点', 540, 970, { size: 38, weight: 700, font: SERIF, align: 'center', color: GOLD, spread: 4 }, prog(t, 32.3, 33.1), F);
+}
+
+// ======================================================================== ③ 洒咖啡
+function sceneSpill(t) {
+  if (t < SPILL - .3 || t > HELP + .2) return;
+  const A = sstep(SPILL - .1, SPILL + .5, t) * (1 - sstep(HELP - .6, HELP - .05, t));
+  if (A <= 0) return;
+  const bk = 1 - E.out(((t - SPILL) / BEAT) % 1);
+  const hd = (s, t0, t1, col, gl) => text(s, 540, 640, { font: SERIF, size: 52, weight: 900, align: 'center', color: col, alpha: A * sstep(t0, t0 + .5, t) * (t1 ? 1 - sstep(t1, t1 + .4, t) : 1), glow: gl, blur: 14 });
+  hd('一个老实验', 37.7, 40.6, CREAM);
+  hd('答题高手，洒了一身咖啡', 41.0, 44.6, CREAM);
+  hd('反而更讨人喜欢', 45.0, 48.6, WARMC, `rgba(${O_RGB},.4)`);
+  ctx.save(); ctx.translate(540, 640); ctx.scale(1 + .03 * bk, 1 + .03 * bk);
+  text('更像个人', 0, 0, { font: SERIF, size: 60, weight: 900, align: 'center', color: GOLD, alpha: A * sstep(49.0, 49.5, t), glow: `rgba(${O_RGB},.5)`, blur: 16 }); ctx.restore();
+  ctx.save(); ctx.globalAlpha = A; ctx.fillStyle = 'rgba(30,31,40,.96)'; ctx.strokeStyle = GOLD; ctx.lineWidth = 3; ctx.beginPath(); ctx.roundRect(420, 1080, 240, 150, 10); ctx.fill(); ctx.stroke(); ctx.restore();   // 答题台
+  ctx.save(); ctx.globalAlpha = A; ctx.fillStyle = '#d9484d'; ctx.beginPath(); ctx.arc(600, 1080, 18 * (1 + .1 * bk * (t < 41)), PI, TAU); ctx.fill(); ctx.restore();
+  person(500, 1070, 1.0, A, mixc(CREAM, GOLD, sstep(45.0, 46.0, t)));
+  const sb = A * sstep(38.0, 38.4, t);                                                                     // 记分牌：一题题答对
+  const n = clamp(Math.floor((t - 38.2) / BEAT) + 1, 0, 9);
+  ctx.save(); ctx.globalAlpha = sb; ctx.fillStyle = 'rgba(20,21,28,.96)'; ctx.strokeStyle = 'rgba(195,202,214,.6)'; ctx.lineWidth = 3; ctx.fillRect(700, 800, 260, 170); ctx.strokeRect(700, 800, 260, 170); ctx.restore();
+  for (let i = 0; i < 9; i++) text(i < n ? '✓' : '·', 730 + (i % 5) * 50, 850 + Math.floor(i / 5) * 60, { font: SANS, size: 34, weight: 700, align: 'center', color: i < n ? TEALC : '#6f7786', alpha: sb });
+  const tip = E.out(prog(t, 41.2, 41.8)), sp = sstep(41.6, 42.2, t);
+  mug(380 - 20 * tip, 1050 + 10 * tip, 1.0, A * sstep(40.8, 41.1, t), -1.6 * tip);
+  if (sp > 0) { ctx.save(); ctx.globalAlpha = A * sp; ctx.fillStyle = 'rgba(107,66,38,.85)'; ctx.beginPath(); ctx.ellipse(470, 1040, 60 * sp, 26 * sp, .3, 0, TAU); ctx.fill();
+    for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.arc(430 + i * 18, 1000 + 20 * Math.sin(i * 2), 6, 0, TAU); ctx.fill(); } ctx.restore(); }
+  const L = A * sstep(45.0, 45.4, t), lv = E.out(prog(t, 45.2, 46.6));
+  ctx.save(); ctx.globalAlpha = L; ctx.fillStyle = 'rgba(255,255,255,.08)'; ctx.fillRect(140, 840, 44, 340); ctx.fillStyle = WARMC; ctx.fillRect(140, 1180 - 340 * (.5 + .35 * lv), 44, 340 * (.5 + .35 * lv)); ctx.restore();
+  text('好感', 162, 1222, { font: SANS, size: 26, align: 'center', color: WARMC, alpha: L });
+  text('↑', 162, 800, { font: SERIF, size: 44, weight: 900, align: 'center', color: WARMC, alpha: L * lv });
+}
+
+// ======================================================================== ④ 求助
+function sceneHelp(t) {
+  if (t < HELP - .3 || t > ASK + .2) return;
+  const A = sstep(HELP - .1, HELP + .5, t) * (1 - sstep(ASK - .7, ASK - .1, t));
+  if (A <= 0) return;
+  text('求助也一样', 540, 640, { font: SERIF, size: 54, weight: 900, align: 'center', color: CREAM, alpha: A * sstep(53.7, 54.2, t) * (1 - sstep(57.6, 58.0, t)) });
+  text('以为：多半会被拒绝', 540, 640, { font: SERIF, size: 54, weight: 900, align: 'center', color: PINK, alpha: A * sstep(58.0, 58.5, t) * (1 - sstep(60.6, 61.0, t)) });
+  text('实际：约是你猜的两倍', 540, 640, { font: SERIF, size: 54, weight: 900, align: 'center', color: GOLD, alpha: A * sstep(60.9, 61.4, t), glow: `rgba(${O_RGB},.5)`, blur: 16 });
+  person(160, 1150, .9, A, TEALC);
+  say('能帮我一下吗？', 250, 960, A * sstep(54.0, 54.4, t), TEALC, 26);
+  const xs = [360, 470, 580, 690, 800, 910];
+  xs.forEach((x, i) => {                                                                                  // 先是想象中的：大多摇头；然后是实际：一半以上点头
+    const guessYes = i < 2, realYes = i < 4, real = sstep(60.9 + i * .1, 61.2 + i * .1, t);
+    const col = real > 0 ? (realYes ? GOLD : GREYP) : (t > 58.0 ? (guessYes ? WARMC : '#6f7786') : GREYP);
+    person(x, 1150, .62, A, col);
+    if (t > 58.0 && t < 60.9) text(guessYes ? '✓' : '✗', x, 1010, { font: SANS, size: 32, weight: 700, align: 'center', color: guessYes ? WARMC : PINK, alpha: A * sstep(58.2 + i * .1, 58.5 + i * .1, t) });
+    if (real > 0) text(realYes ? '✓' : '·', x, 1010, { font: SANS, size: 34, weight: 700, align: 'center', color: realYes ? GOLD : '#6f7786', alpha: A * real });
+  });
+  text('你猜的', 540, 1250, { font: SANS, size: 26, align: 'center', color: WARMC, alpha: A * sstep(58.2, 58.6, t) * (1 - sstep(60.8, 61.1, t)) });
+  text('实际的（示意）', 540, 1250, { font: SANS, size: 26, align: 'center', color: GOLD, alpha: A * sstep(61.0, 61.4, t) });
+}
+
+// ======================================================================== ⑤ 帮我一下
+function sceneAsk(t) {
+  if (t < ASK - .2 || t > CLIMAX + .3) return;
+  const A = sstep(ASK + .2, ASK + 1.0, t) * (1 - sstep(CLIMAX - .4, CLIMAX + .1, t));
+  if (A <= 0) return;
+  const hd = (s, t0, t1, col, gl) => text(s, 540, 640, { font: SERIF, size: 52, weight: 900, align: 'center', color: col, alpha: A * sstep(t0, t0 + .5, t) * (t1 ? 1 - sstep(t1, t1 + .4, t) : 1), glow: gl, blur: 14 });
+  hd('撑不住的时候', 64.5, 67.6, CREAM);
+  hd('“能帮我一下吗？”', 67.9, 71.9, TEALC, `rgba(${T_RGB},.4)`);
+  hd('面子，没丢那么多', 72.3, 76.0, GOLD, `rgba(${O_RGB},.4)`);
+  hd('两千多年前：', 76.4, 0, CREAM);
+  const help = E.io(prog(t, 68.8, 70.4)), shake = (1 - help) * 4 * Math.sin(t * 20) * sstep(64.6, 65.2, t);
+  person(400 + shake, 1160, 1.0, A, TEALC);
+  const by = 1000 - 20 * help;                                                                              // 一个快扛不住的大箱子
+  ctx.save(); ctx.globalAlpha = A; ctx.translate(480 + shake, by); ctx.rotate(.08 * (1 - help)); ctx.fillStyle = 'rgba(120,90,70,.9)'; ctx.strokeStyle = '#c8a46a'; ctx.lineWidth = 3;
+  ctx.fillRect(-90, -70, 180, 130); ctx.strokeRect(-90, -70, 180, 130); ctx.beginPath(); ctx.moveTo(-90, -20); ctx.lineTo(90, -20); ctx.stroke(); ctx.restore();
+  say('这个我不太会，能帮我一下吗？', 480, 800, A * sstep(68.0, 68.4, t) * (1 - sstep(71.9, 72.3, t)), TEALC, 26);
+  person(lerp(860, 600, help), 1160, 1.0, A * sstep(68.6, 69.0, t), WARMC);
+  const mz = A * sstep(72.4, 72.8, t);                                                                     // “面子”刻度：只往下动了一点点
+  if (mz > 0) {
+    ctx.save(); ctx.globalAlpha = mz; ctx.fillStyle = 'rgba(255,255,255,.08)'; ctx.fillRect(900, 820, 44, 300); const lv = 1 - .08 * E.out(prog(t, 72.8, 73.6));
+    ctx.fillStyle = GOLD; ctx.fillRect(900, 1120 - 300 * lv, 44, 300 * lv); ctx.restore();
+    text('面子', 922, 1160, { font: SANS, size: 26, align: 'center', color: GOLD, alpha: mz });
+    glow(540, 1050, 50, O_RGB, mz * .4, 10);
+  }
+}
+
+// ======================================================================== ⑥ 日月之食
+function sceneFinale(t) {
+  if (t < CLIMAX - .1) return;
+  const A = sstep(CLIMAX - .1, CLIMAX + .2, t);
+  const fl = 1 - prog(t, CLIMAX, CLIMAX + .6);
+  if (t > CLIMAX && fl > 0) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = `rgba(255,214,170,${.38 * fl * fl})`; ctx.fillRect(0, 0, W, H); ctx.restore(); }
+  const fl2 = 1 - prog(t, FINAL, FINAL + .7);
+  if (t > FINAL && fl2 > 0) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = `rgba(255,226,190,${.32 * fl2 * fl2})`; ctx.fillRect(0, 0, W, H); ctx.restore(); }
+  const fin = sstep(FINAL, FINAL + 1.5, t), sx = 540, sy = 950, R = 110;
+  warmth(A * (1 + .5 * fin), sx, 1060, 760);
+  const m = (t - CLIMAX - 1) / (FINAL - CLIMAX - 1), mx = lerp(sx - 300, sx + 320, E.io(clamp(m, 0, 1)));   // 月亮从左边慢慢移过太阳：先挡住（日食），再移开
+  const cover = clamp(1 - Math.abs(mx - sx) / (2 * R), 0, 1);
+  glow(sx, sy, R * (1.6 + .5 * fin), '255,214,160', A * (.5 + .5 * (1 - cover)) * (1 + .5 * fin), 14);
+  ctx.save(); ctx.globalAlpha = A; ctx.fillStyle = '#ffd9a0'; ctx.shadowColor = 'rgba(255,200,140,.9)'; ctx.shadowBlur = 40; ctx.beginPath(); ctx.arc(sx, sy, R, 0, TAU); ctx.fill(); ctx.restore();
+  ctx.save(); ctx.globalAlpha = A; ctx.fillStyle = '#0b0c12'; ctx.beginPath(); ctx.arc(mx, sy, R * 1.02, 0, TAU); ctx.fill(); ctx.restore();
+  if (cover > .85) { ctx.save(); ctx.globalAlpha = A * (cover - .85) / .15; ctx.strokeStyle = 'rgba(255,230,190,.9)'; ctx.lineWidth = 4; ctx.shadowColor = 'rgba(255,220,170,1)'; ctx.shadowBlur = 30; ctx.beginPath(); ctx.arc(sx, sy, R * 1.04, 0, TAU); ctx.stroke(); ctx.restore(); }
+  const look = sstep(CLIMAX + 6, CLIMAX + 8, t);                                                           // 下面一排人，一起抬头看
+  for (let i = 0; i < 7; i++) { const x = 200 + i * 113; person(x, 1260, .55, A, mixc(GREYP, GOLD, Math.max(fin, 1 - cover) * .9), -.25 * look * (x < 540 ? -1 : 1) * 0 - .0); text('↑', x, 1140, { font: SANS, size: 26, align: 'center', color: GOLD, alpha: A * look * .7 }); }
+  if (fin > 0) for (let i = 0; i < 24; i++) { const r = mulberry(5400 + i), x = 380 + r() * 320, v = 30 + r() * 40, p = ((t - FINAL) * v / 420 + r()) % 1; glow(x + 16 * Math.sin(t + i), 1200 - p * 420, 2 + 2 * r(), O_RGB, fin * (1 - p) * .8, 3); }
+  const qa = 1 - sstep(92.7, 93.3, t);
+  typeText('过也，人皆见之；', 540, 440, { ...big, size: 62, weight: 900 }, prog(t, CLIMAX + .3, CLIMAX + 1.3), qa);
+  typeText('更也，人皆仰之。', 540, 552, { ...big, size: 68, weight: 900, color: GOLD, glow: `rgba(${O_RGB},.45)`, glowBlur: 36 }, prog(t, CLIMAX + 1.5, CLIMAX + 2.5), qa);
+  typeText('—— 子贡（《论语·子张》）', 540, 636, { size: 26, weight: 500, font: SANS, align: 'center', color: DIM, ls: 4, spread: 5 }, prog(t, CLIMAX + 2.7, CLIMAX + 3.3), qa);
+  typeText('露一点不完美，', 540, 480, { ...big, size: 56, weight: 700 }, prog(t, 93.4, 94.2), 1);
+  typeText('人反而更近。', 540, 596, { ...big, size: 84, weight: 900, glow: `rgba(${O_RGB},.5)`, glowBlur: 40 }, prog(t, FINAL, FINAL + .9), 1);
+}
+
+// ======================================================================== 世界层
+function WORLD(t) {
+  space();
+  starfield(t, STAR_A(t));
+  sceneTest(t); sceneTitle(t); sceneMess(t); sceneSpill(t); sceneHelp(t); sceneAsk(t); sceneFinale(t);
+}
+function SAMPLES(T) {
+  if ((T > 7.9 && T < 9.2) || (T > 14.8 && T < LIFT + 1.2)) return 4;
+  if ((T > CLIMAX - .2 && T < CLIMAX + 1.4) || (T > FINAL - .2 && T < FINAL + 1.2)) return 5;
+  return 3;
+}
+function BLOOM_K(T) { return .42 + .18 * win(T, LIFT, LIFT + 4, .2, .8) + .1 * win(T, 72.4, 76, .5, .5) + .22 * win(T, CLIMAX, TOTAL, .2, 1) + .12 * win(T, FINAL, TOTAL, .2, 1); }
+function OVER(T) {
+  stamp('2018', 'Bruk, Scholl & Bless · J Pers Soc Psychol', 8.2, 35.3, T);
+  stamp('1966', 'Aronson, Willerman & Floyd · Psychon Sci', 37.6, 52.9, T);
+  stamp('2008', 'Flynn & Lake · J Pers Soc Psychol', 53.6, 63.4, T);
+}
+function MASTER(T) { return 1; }
+function INIT() {
+  const r = mulberry(62);
+  STARS = Array.from({ length: 700 }, () => { const b = Math.pow(r(), 3); return { x: r() * W, y: r() * H, z: .35 + r() * .65, b: .22 + .78 * b, s: .8 + 2.0 * b, tw: .6 + r() * 2.2, ph: r() * TAU, warm: r() < .2 }; });
+}
+
+// ======================================================================== 音效提示表（音高都在升 G 小调里，最后一个和弦是升 G 大调）
+const NOTE = { Gs2: 103.83, B2: 123.47, C3: 130.81, Ds3: 155.56, Gs3: 207.65, B3: 246.94, Ds4: 311.13, Gs4: 415.30, B4: 493.88, C5: 523.25, Ds5: 622.25, Gs5: 830.61 };
+const GSM_SHIM = [NOTE.B4, NOTE.Ds4, NOTE.Gs4, NOTE.Gs3, NOTE.Ds3], GS_SHIM = [NOTE.C5, NOTE.Ds4, NOTE.Gs4, NOTE.Gs3, NOTE.Ds3], GSM_SWELL = [51.91, 77.78, 103.83, 123.47, 155.56];
+function CUES() {
+  const c = [];
+  c.push([.6, 'tink', { f: NOTE.Ds5, gain: .05 }], [1.0, 'tink', { f: NOTE.Gs4, gain: .05 }]);
+  [Q.c3, Q.c2, Q.c1].forEach(t => c.push([t, 'tick', { gain: .55 }]));
+  c.push([Q.REVEAL, 'whoosh', { dur: .5, gain: .22 }], [Q.REVEAL + .05, 'chord', { f: [NOTE.Gs2, NOTE.B2, NOTE.Ds3], gain: .22 }], [Q.REVEAL + .1, 'tink', { f: NOTE.Ds5, gain: .1 }]);
+  for (let i = 0; i < 3; i++) c.push([11.1 + i * .4, 'tick', { gain: .07 }]);
+  c.push([LIFT - 1.33, 'riser', { dur: 1.33, gain: .38 }], [LIFT, 'boom', { gain: .55 }], [LIFT, 'whoosh', { dur: .9, gain: .32 }], [LIFT + .1, 'shimmer', { f: GSM_SHIM, gain: .28 }]);
+  for (let i = 0; i < 4; i++) c.push([20.6 + i * .5, 'tick', { gain: .06 }]);
+  c.push([24.0, 'whoosh', { dur: 1.2, gain: .1 }], [24.6, 'swell', { dur: 2.0, f: GSM_SWELL, gain: .08 }], [27.9, 'tink', { f: NOTE.Gs5, gain: .05 }], [31.7, 'page', { gain: .18 }]);
+  c.push([SPILL, 'whoosh', { dur: .5, gain: .25 }]);
+  for (let i = 0; i < 4; i++) c.push([38.2 + i * BEAT, 'tink', { f: NOTE.Gs4 * (1 + i * .12), gain: .04 }]);
+  c.push([41.4, 'dust', { dur: .8, gain: .08 }], [41.7, 'thud', { gain: .08 }], [45.2, 'bar', { f0: 200, f1: 400, dur: 1.2, gain: .06 }]);
+  c.push([49.1, 'chord', { f: [NOTE.Gs2, NOTE.B2, NOTE.Ds3], gain: .1 }], [49.2, 'tink', { f: NOTE.Gs5, gain: .06 }]);
+  c.push([HELP, 'whoosh', { dur: .5, gain: .22 }], [54.0, 'tink', { f: NOTE.B4, gain: .05 }]);
+  for (let i = 0; i < 6; i++) c.push([58.2 + i * .1, 'tick', { gain: .05 }]);
+  for (let i = 0; i < 4; i++) c.push([60.9 + i * .1, 'tink', { f: NOTE.Gs5, gain: .04 }]);
+  c.push([64.6, 'thud', { gain: .05 }], [68.0, 'tink', { f: NOTE.B4, gain: .05 }], [68.8, 'whoosh', { dur: 1.6, gain: .07 }], [72.8, 'tick', { gain: .06 }]);
+  c.push([76.4, 'page', { gain: .14 }], [76.6, 'swell', { dur: CLIMAX - 76.6, f: GSM_SWELL, gain: .28 }]);
+  c.push([CLIMAX, 'boom', { gain: .6 }], [CLIMAX, 'shimmer', { f: GSM_SHIM, gain: .42 }], [CLIMAX + .4, 'air', { dur: 10, hum: 103.83, gain: .14 }]);
+  c.push([FINAL - 2.6, 'revcym', { dur: 2.6, gain: .28 }], [FINAL, 'boom', { gain: .5 }], [FINAL, 'shimmer', { f: GS_SHIM, gain: .45 }], [FINAL + .1, 'chord', { f: [NOTE.Gs2, NOTE.C3, NOTE.Ds3], gain: .2 }]);
+  return c.sort((a, b) => a[0] - b[0]);
+}
