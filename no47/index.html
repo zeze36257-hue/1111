@@ -512,16 +512,16 @@ function sceneHalo(t) {
   }
   const G = A * sstep(40.9, 41.4, t);
   if (G > 0) {
-    const base = 1030, mid = 260;
+    const base = 1060, mid = 200;
     ctx.save(); ctx.globalAlpha = G; ctx.strokeStyle = 'rgba(236,230,218,.35)'; ctx.lineWidth = 2; ctx.setLineDash([8, 8]); ctx.beginPath(); ctx.moveTo(150, base - mid); ctx.lineTo(930, base - mid); ctx.stroke(); ctx.restore();
     [[270, -.075, '相貌平平', '约少 5%–10%', 41.2, '154,163,178', '#c3cad6'], [540, 0, '一般', '基准', 41.6, '236,230,218', CREAM], [810, .05, '好看', '多一点', 45.0, O_RGB, '#ffd2a0']].forEach(([x, d, lab, val, t0, rgb, col]) => {
-      const k = E.out(prog(t, t0, t0 + .9)), a = G * sstep(t0, t0 + .3, t), h = (mid + d * 1400) * k;
+      const k = E.out(prog(t, t0, t0 + .9)), a = G * sstep(t0, t0 + .3, t), h = (mid + d * 1000) * k;
       if (a <= 0) return;
       ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = `rgba(${rgb},.8)`; ctx.fillRect(x - 70, base - h, 140, h); ctx.restore();
       text(val, x, base - h - 28, { font: SERIF, size: 34, weight: 900, align: 'center', color: col, alpha: a * sstep(.6, 1, k) });
       text(lab, x, base + 42, { font: SANS, size: 28, align: 'center', color: CREAM, alpha: a });
     });
-    text('（示意，柱高不按比例）', 540, 1130, { font: SANS, size: 22, align: 'center', color: '#6f7786', alpha: G });
+    text('（示意，柱高不按比例）', 540, 1160, { font: SANS, size: 22, align: 'center', color: '#6f7786', alpha: G });
   }
 }
 
