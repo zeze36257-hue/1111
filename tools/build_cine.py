@@ -5,7 +5,8 @@
 The episode directory holds meta.json ({"no", "title", "fullTitle", "music": {...}}) and scenes.js, which
 defines TOTAL, SECTIONS, LINES, CUES, INIT(), WORLD(t), SAMPLES(T), BLOOM_K(T), OVER(T) and MASTER(T).
 tools/cine provides the engine (typography, narration, progress bar, watermark, motion blur, bloom, grain)
-and the export hooks.
+and the export hooks. With "host": true in meta.json, tools/cine/host.js (the host-on-camera format) goes between
+the engine and the episode.
 """
 import json, os, sys
 
@@ -13,7 +14,8 @@ here = os.path.dirname(os.path.abspath(__file__))
 ep = os.path.abspath(sys.argv[1])
 meta = json.load(open(os.path.join(ep, 'meta.json'), encoding='utf-8'))
 part = lambda f: open(os.path.join(here, 'cine', f), encoding='utf-8').read()
-page = part('head.html') + part('engine.js') + '\n' + open(os.path.join(ep, 'scenes.js'), encoding='utf-8').read() + part('tail.js')
+host = part('host.js') + '\n' if meta.get('host') else ''                    # 真人出镜格式（No.65 起）：上半屏动画、下半屏留给主持人
+page = part('head.html') + part('engine.js') + '\n' + host + open(os.path.join(ep, 'scenes.js'), encoding='utf-8').read() + part('tail.js')
 for k, v in {'{{TITLE}}': meta['title'], '{{FULLTITLE}}': meta['fullTitle'], '{{NO}}': str(meta['no'])}.items():
     page = page.replace(k, v)
 assert '{{' not in page, 'unfilled placeholder'
