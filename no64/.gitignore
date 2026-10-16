@@ -1,0 +1,8 @@
+shots/
+audio.wav
+audio_raw.wav
+audio_bed.wav
+cues.json
+out.mp4
+bgm.wav
+__pycache__/
