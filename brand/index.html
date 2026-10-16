@@ -22,7 +22,9 @@
 const AVATAR = /[?&]avatar=1/.test(location.search), OUTRO = /[?&]outro=1/.test(location.search);
 const W = 1080, H = 1920, DUR = OUTRO ? 2.5 : 1.8;
 // 每期更新：片尾的下期预告（改完重新运行 fetch_fonts.py，字体子集才会包含新字）
-const NEXT = '第七季完结 · 谢谢你一路看到这里';
+const NEXT = '';
+// 片头、片尾大字下面的一行小字（新系列起；NEXT 留空时片尾也只放大字 + 这一行，不预告下一期）
+const SLOGAN = '关注黑猫，通透人生';
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
 const PI = Math.PI, TAU = PI * 2;
 const clamp = (x, a = 0, b = 1) => x < a ? a : x > b ? b : x;
@@ -111,8 +113,13 @@ function frame(T) {
     const reveal = sstep(0, .35, T) * (1 - sstep(1.4, 1.9, T)), open = 1 - sstep(1.65, 2.15, T);
     drawCat(T + 3, reveal, open);
     const ta = sstep(.25, .6, T) * (1 - sstep(1.5, 1.9, T));
-    text('关注 @黑猫不说话', W / 2 + 4, 1230, { size: 66, weight: 900, ls: 8, color: CREAM, alpha: ta, glow: 'rgba(255,225,180,.25)', blur: 24 });
-    text(NEXT, W / 2 + 3, 1322, { size: 34, weight: 500, ls: 6, color: ORANGE, alpha: sstep(.45, .8, T) * (1 - sstep(1.5, 1.9, T)) });
+    if (NEXT) {                                     // 旧系列：关注 + 下期预告
+      text('关注 @黑猫不说话', W / 2 + 4, 1230, { size: 66, weight: 900, ls: 8, color: CREAM, alpha: ta, glow: 'rgba(255,225,180,.25)', blur: 24 });
+      text(NEXT, W / 2 + 3, 1322, { size: 34, weight: 500, ls: 6, color: ORANGE, alpha: sstep(.45, .8, T) * (1 - sstep(1.5, 1.9, T)) });
+    } else {                                        // 新系列：和片头同样的大字，下面一行“关注黑猫，通透人生”
+      text('黑猫不说话', W / 2 + 9, 1230, { size: 92, weight: 900, ls: 18, color: CREAM, alpha: ta, glow: 'rgba(255,225,180,.25)', blur: 24 });
+      text(SLOGAN, W / 2 + 6, 1318, { size: 36, weight: 500, ls: 12, color: ORANGE, alpha: sstep(.45, .8, T) * (1 - sstep(1.5, 1.9, T)) });
+    }
     return;
   }
   // 0–0.25 睁眼；0.95–1.05 眨一下；1.55–1.75 闭眼切走
@@ -123,7 +130,7 @@ function frame(T) {
   ctx.save(); ctx.beginPath(); ctx.rect(W / 2 - 330, 1170, 660 * wipe, 120); ctx.clip();
   text('黑猫不说话', W / 2 + 9, 1230, { size: 92, weight: 900, ls: 18, color: CREAM, alpha: ta, glow: 'rgba(255,225,180,.25)', blur: 24 });
   ctx.restore();
-  text('不说话，只画人心', W / 2 + 6, 1318, { size: 36, weight: 500, ls: 12, color: DIM, alpha: sstep(.75, 1.05, T) * (1 - sstep(1.5, 1.72, T)) });
+  text(SLOGAN, W / 2 + 6, 1318, { size: 36, weight: 500, ls: 12, color: DIM, alpha: sstep(.75, 1.05, T) * (1 - sstep(1.5, 1.72, T)) });
 }
 
 let fontsReady = false;
