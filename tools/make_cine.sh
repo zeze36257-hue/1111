@@ -16,6 +16,7 @@ python3 "$ROOT/tools/build_cine.py" "$EP"
 cp -n "$ROOT/tools/export.cjs" "$ROOT/tools/fetch_fonts.py" "$EP/" 2>/dev/null || true
 (cd "$EP" && python3 fetch_fonts.py >/dev/null && node export.cjs --cues cues.json >/dev/null)
 if [ -f "$EP/music.py" ]; then python3 "$EP/music.py"; fi                 # 这一期自己写的原创配乐 -> bgm.wav
+if grep -q '"voice"' "$EP/meta.json"; then python3 "$ROOT/tools/cine/tts.py" "$EP"; fi   # 配音（MiniMax 国内版）-> voice/*.mp3
 python3 "$ROOT/tools/cine/audio.py" "$EP"
 python3 "$ROOT/tools/cine/voice_script.py" "$EP"                       # 配音稿.txt（成片时间）
 (cd "$EP" && node export.cjs --workers 4 --audio audio.wav --out body.mp4 | tail -1)

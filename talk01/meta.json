@@ -1,3 +1,4 @@
 {"no": "T01", "title": "为什么越长大，朋友越少", "fullTitle": "为什么越长大，朋友越少？",
  "next": "",
+ "voice": {"id": "Chinese (Mandarin)_Gentleman", "model": "speech-2.8-hd"},
  "music": {"src": "bgm.wav", "segments": [[0, 153.6]], "fadeOut": 1.0}}

@@ -212,6 +212,21 @@ wet = np.stack([fftconvolve(sfx[:, c], ir[:, c])[:len(sfx)] for c in range(2)], 
 sfx = (sfx + .32 * wet)[:N]
 
 mix = music * .9 + sfx * .55
+# 配音（tools/cine/tts.py 写的 voice/*.mp3）：每句放在它开始的时间，配乐和音效在说话时让开（闪避）
+vdir = os.path.join(ep, 'voice')
+if meta.get('voice') and os.path.exists(os.path.join(vdir, 'index.json')):
+    voice = np.zeros((N, 2))
+    for name, e in json.load(open(os.path.join(vdir, 'index.json'), encoding='utf-8')).items():
+        x = hp(decode(os.path.join(vdir, name))[:, 0], 70)
+        k = np.flatnonzero(np.abs(x) > 10 ** (-45 / 20)); x = x[max(0, k[0] - int(.03 * SR)):] if len(k) else x   # 去掉开头的静音，对准字幕
+        s = int(e['start'] * SR); x = x[:N - s]; voice[s:s + len(x)] += x[:, None]
+    talk = np.convolve(np.abs(voice[:, 0]) > 10 ** (-40 / 20), np.ones(int(.25 * SR)), 'same') > 0      # 说话的区间（含字间小停顿）
+    duck = sosfilt(butter(1, 2.5, 'lowpass', fs=SR, output='sos'), talk.astype(float))                 # 平滑：约 0.1 秒压下、0.4 秒回来
+    duck = np.clip(duck / max(duck.max(), 1e-9), 0, 1)[:, None]
+    voice *= 10 ** (meta['voice'].get('db', -17) / 20) / (np.sqrt((voice[talk] ** 2).mean()) + 1e-9)    # 说话时的 RMS
+    mix = music * .9 * (1 - .72 * duck) + sfx * .55 * (1 - .4 * duck) + voice
+    under = 20 * np.log10(np.sqrt(((music * .9 * (1 - .72 * duck))[talk] ** 2).mean()) + 1e-9)
+    print(f"voice: {meta['voice']['id']}, music under the voice {under - meta['voice'].get('db', -17):+.1f} dB")
 peak = np.abs(mix).max()
 if peak > .98: mix *= .98 / peak
 tmp = os.path.join(ep, 'audio_raw.wav')
