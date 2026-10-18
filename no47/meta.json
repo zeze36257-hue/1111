@@ -1,3 +1,4 @@
 {"no": 47, "title": "外貌主义", "fullTitle": "外貌主义：看一眼脸，就能猜中谁当选？",
  "next": "下一期 · No.48《自我中心主义》",
+ "voice": {"id": "Chinese (Mandarin)_Gentleman", "model": "speech-2.8-hd"},
  "music": {"src": "bgm.wav", "segments": [[0, 104.0]], "fadeOut": 0.8}}

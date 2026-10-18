@@ -1,3 +1,4 @@
 {"no": 62, "title": "面子主义", "fullTitle": "面子主义：示弱，真的很丢脸吗？",
  "next": "下一期 · No.63《社群主义》（第七季完结）",
+ "voice": {"id": "Chinese (Mandarin)_Gentleman", "model": "speech-2.8-hd"},
  "music": {"src": "bgm.wav", "segments": [[0, 104.0]], "fadeOut": 0.8}}

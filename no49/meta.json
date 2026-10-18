@@ -1,3 +1,4 @@
 {"no": 49, "title": "节俭主义", "fullTitle": "节俭主义：花了钱，就一定要用完吗？",
  "next": "下一期 · No.50《英雄主义》",
+ "voice": {"id": "Chinese (Mandarin)_Gentleman", "model": "speech-2.8-hd"},
  "music": {"src": "bgm.wav", "segments": [[0, 104.0]], "fadeOut": 0.8}}

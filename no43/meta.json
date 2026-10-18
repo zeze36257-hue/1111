@@ -1,3 +1,4 @@
 {"no": 43, "title": "理想主义", "fullTitle": "理想主义：热爱，是找到的吗？",
  "next": "第五季完结 · 谢谢你一路看到这里",
+ "voice": {"id": "Chinese (Mandarin)_Gentleman", "model": "speech-2.8-hd"},
  "music": {"src": "bgm.wav", "segments": [[0, 104.0]], "fadeOut": 0.8}}

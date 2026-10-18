@@ -1,3 +1,4 @@
 {"no": 50, "title": "英雄主义", "fullTitle": "英雄主义：人越多，越没人帮你？",
  "next": "下一期 · No.51《自然主义》",
+ "voice": {"id": "Chinese (Mandarin)_Gentleman", "model": "speech-2.8-hd", "say": {"120": "幺二零"}},
  "music": {"src": "bgm.wav", "segments": [[0, 104.0]], "fadeOut": 0.8}}

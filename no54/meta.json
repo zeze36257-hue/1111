@@ -1,3 +1,4 @@
 {"no": 54, "title": "互惠主义", "fullTitle": "互惠主义：别人对你好，就一定要还吗？",
  "next": "下一期 · No.55《部落主义》",
+ "voice": {"id": "Chinese (Mandarin)_Gentleman", "model": "speech-2.8-hd"},
  "music": {"src": "bgm.wav", "segments": [[0, 104.0]], "fadeOut": 0.8}}

@@ -1,3 +1,4 @@
 {"no": 52, "title": "最大化主义", "fullTitle": "最大化主义：选最好的，就会最开心吗？",
  "next": "下一期 · No.53《幸福主义》（第六季完结）",
+ "voice": {"id": "Chinese (Mandarin)_Gentleman", "model": "speech-2.8-hd"},
  "music": {"src": "bgm.wav", "segments": [[0, 104.0]], "fadeOut": 0.8}}

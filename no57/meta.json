@@ -1,3 +1,4 @@
 {"no": 57, "title": "精英主义", "fullTitle": "精英主义：越强调凭本事，越公平吗？",
  "next": "下一期 · No.58《孤立主义》",
+ "voice": {"id": "Chinese (Mandarin)_Gentleman", "model": "speech-2.8-hd"},
  "music": {"src": "bgm.wav", "segments": [[0, 104.0]], "fadeOut": 0.8}}

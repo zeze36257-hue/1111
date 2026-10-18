@@ -1,3 +1,4 @@
 {"no": 51, "title": "自然主义", "fullTitle": "自然主义：天然的，就更好吗？",
  "next": "下一期 · No.52《最大化主义》",
+ "voice": {"id": "Chinese (Mandarin)_Gentleman", "model": "speech-2.8-hd"},
  "music": {"src": "bgm.wav", "segments": [[0, 104.0]], "fadeOut": 0.8}}

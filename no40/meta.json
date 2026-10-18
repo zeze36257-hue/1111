@@ -1,3 +1,4 @@
 {"no": 40, "title": "决定论", "fullTitle": "决定论：你的选择，是你做的吗？",
  "next": "下一期 · No.41《失败主义》",
+ "voice": {"id": "Chinese (Mandarin)_Gentleman", "model": "speech-2.8-hd"},
  "music": {"src": "bgm.wav", "segments": [[0, 104.0]], "fadeOut": 0.8}}

@@ -1,3 +1,4 @@
 {"no": 56, "title": "极端主义", "fullTitle": "极端主义：越讨论，越极端吗？",
  "next": "下一期 · No.57《精英主义》",
+ "voice": {"id": "Chinese (Mandarin)_Gentleman", "model": "speech-2.8-hd"},
  "music": {"src": "bgm.wav", "segments": [[0, 104.0]], "fadeOut": 0.8}}
