@@ -228,19 +228,21 @@ function sceneOpen(t) {
   if (t > L(4) + 2.0) return;
   const zk = E.inExpo(prog(t, L(4) + .1, L(4) + 1.1)), A = 1 - sstep(L(4) + .9, L(4) + 1.2, t);
   const cx = (DOOR.x0 + 4), cy = (DOOR.y0 + FLOOR1) / 2;
-  const camX = track([[0, 480], [L(1) + 1.6, 480], [L(2) + 1.6, 640]])(t);                            // 镜头跟着往右移，门在右边
+  const camX = track([[0, 480], [L(1) + 1.0, 480], [L(2) + 1.4, 640]])(t);                            // 镜头跟着往右移，门在右边
   ctx.save(); ctx.globalAlpha = A;
   ctx.translate(540, 960); ctx.scale(1.35, 1.35); ctx.translate(-camX, -1000);                         // 镜头：放大 1.35 倍
   if (zk > 0) { const z = 1 + 11 * zk; ctx.translate(cx, cy); ctx.scale(z, z); ctx.translate(-cx, -cy); }
   floor(FLOOR1, 0, 1200, 1);
   const px = pX(t), ax = aX(t), cool = sstep(L(2), L(2) + 1, t);
   // 门：吵架时出现；人走进门洞，门板从右往左关上，把他挡在里面；门缝里一道冷光
-  const door = sstep(L(2) + .7, L(2) + 1.2, t), close = E.io(prog(t, L(2) + 2.5, L(2) + 3.0));
+  const door = sstep(L(2) + .7, L(2) + 1.2, t), close = E.io(prog(t, L(2) + 2.4, L(2) + 3.2));
   if (door > 0) {
-    ctx.save(); ctx.globalAlpha *= door; ctx.fillStyle = 'rgba(120,170,255,.10)'; ctx.fillRect(DOOR.x0, DOOR.y0, DOOR.x1 - DOOR.x0, FLOOR1 - DOOR.y0); ctx.restore();
+    ctx.save(); ctx.globalAlpha *= door; ctx.fillStyle = 'rgba(120,170,255,.10)'; ctx.fillRect(DOOR.x0, DOOR.y0, DOOR.x1 - DOOR.x0, FLOOR1 - DOOR.y0);
+    ctx.strokeStyle = 'rgba(236,230,218,.6)'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(DOOR.x0, FLOOR1); ctx.lineTo(DOOR.x0, DOOR.y0); ctx.lineTo(DOOR.x1, DOOR.y0); ctx.lineTo(DOOR.x1, FLOOR1); ctx.stroke(); ctx.restore();
   }
   // 两个人之间的线：越拉越紧；门关到一半时被夹断，两截往回弹
-  const snapT = L(2) + 2.7, snap = E.out(prog(t, snapT, snapT + .5));
+  const snapT = L(2) + 2.85, snap = E.out(prog(t, snapT, snapT + .7));
   const d = Math.abs(ax - px), sag = Math.max(0, 70 - d * .12), lw = Math.max(1.5, 4 - d / 200), ty = FLOOR1 - 80;
   const flick = .75 + .25 * Math.sin(t * 23) * sstep(400, 520, d), ta = flick * sstep(.05, .5, t + .5);
   if (t < snapT) thread(px + 30, ty, ax - 30, ty, ta, W_RGB, sag, lw);
@@ -249,16 +251,12 @@ function sceneOpen(t) {
     thread(px + 30, ty, lerp(px + 30, mx, k), ty + 30 * snap, ta * k, W_RGB, 6 * k, lw);              // 左边那截弹回去、垂下来
     glow(mx, ty, 4, W_RGB, k * k, 6);
   }
-  fig(ax, FLOOR1 - 30, 1, 1, mixc('#9fb4d4', COOL, cool), { sq: 1 - .9 * Math.sin(PI * prog(t, L(2) + 1.1, L(2) + 1.5)) });
-  if (door > 0) {
-    ctx.save(); ctx.globalAlpha *= door; ctx.strokeStyle = 'rgba(236,230,218,.6)'; ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.moveTo(DOOR.x0, FLOOR1); ctx.lineTo(DOOR.x0, DOOR.y0); ctx.lineTo(DOOR.x1, DOOR.y0); ctx.lineTo(DOOR.x1, FLOOR1); ctx.stroke(); ctx.restore();
-  }
+  fig(ax, FLOOR1 - 30, 1, 1, mixc('#9fb4d4', COOL, cool));
   if (close > 0) {
     const w = (DOOR.x1 - DOOR.x0) * close;
     ctx.save(); ctx.fillStyle = '#1a1d26'; ctx.strokeStyle = 'rgba(236,230,218,.7)'; ctx.lineWidth = 3; ctx.fillRect(DOOR.x1 - w, DOOR.y0, w, FLOOR1 - DOOR.y0); ctx.strokeRect(DOOR.x1 - w, DOOR.y0, w, FLOOR1 - DOOR.y0);
     ctx.restore(); circ(DOOR.x0 + 22, 910, 6, CREAM, sstep(.9, 1, close));
-    const crack = sstep(L(2) + 2.9, L(2) + 3.3, t);                                                    // 门缝里的冷光
+    const crack = sstep(L(2) + 3.1, L(2) + 3.5, t);                                                    // 门缝里的冷光
     if (crack > 0) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = `rgba(${ICE_RGB},${.85 * crack})`; ctx.shadowColor = `rgba(${ICE_RGB},1)`; ctx.shadowBlur = 20;
       ctx.fillRect(DOOR.x0 + 1, DOOR.y0 + 4, 5, FLOOR1 - DOOR.y0 - 4); ctx.fillRect(DOOR.x0, FLOOR1 - 4, DOOR.x1 - DOOR.x0, 3); ctx.restore(); }
   }
@@ -273,7 +271,7 @@ function sceneOpen(t) {
   const jab = KN.reduce((m, k) => Math.max(m, Math.max(0, 1 - Math.abs(t - k) / .09)), 0);
   fig(px, FLOOR1 - 30, 1, 1, WARMC, { heart: pw * .8, arm: raise * (.82 + .18 * jab), lift: 2, reach: 64, dir: 1 });
   if (pw > 0) warmth(pw * .5 * A, px, 960, 380);
-  for (const k of KN) { const p = prog(t, k, k + .6); if (p > 0 && p < 1) { ctx.save(); ctx.globalAlpha = (1 - p) * .8; ctx.strokeStyle = CREAM; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(DOOR.x0 + 10, FLOOR1 - 64, 8 + 40 * p, 0, TAU); ctx.stroke(); ctx.restore(); } }
+  for (const k of KN) { const p = prog(t, k, k + .6); if (p > 0 && p < 1) { ctx.save(); ctx.globalAlpha = (1 - p) * .8; ctx.strokeStyle = CREAM; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(DOOR.x0 + 30, FLOOR1 - 64, 8 + 40 * p, 0, TAU); ctx.stroke(); ctx.restore(); } }
   ctx.restore();
   // 开头大字（第一帧就是封面）
   const hook = 1 - sstep(L(2) - .2, L(2) + .3, t);
@@ -283,7 +281,8 @@ function sceneOpen(t) {
   }
   // 门缝被推到眼前：一片冷白的光，再慢慢退成题目后面的冷光
   const flash = Math.max(0, zk * zk) * (1 - sstep(L(4) + 1.1, L(4) + 1.9, t));
-  if (flash > 0) { ctx.save(); ctx.fillStyle = `rgba(225,238,255,${.9 * flash})`; ctx.fillRect(0, 0, W, H); ctx.restore(); }
+  if (flash > 0) { ctx.save(); const g = ctx.createLinearGradient(0, 1250, 0, 1450); g.addColorStop(0, `rgba(225,238,255,${.9 * flash})`); g.addColorStop(1, `rgba(225,238,255,${.35 * flash})`);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); ctx.restore(); }
 }
 
 // ======================================================================== 题目（L4 + 1 → S2 + 1）：光里浮出来；下面那一笔变成尺子
@@ -334,7 +333,7 @@ function sceneRulers(t) {
     if (glowY > .02) seg(AX.ox, AX.oy, AX.ox, AX.y1, `rgba(${ICE_RGB},.9)`, 6, glowY);
     text('怕被抛弃  →', AX.x1, AX.oy + 60, { font: SANS, size: 42, weight: 700, align: 'right', color: WARMC, alpha: lx });
     text('↑  怕太亲近', AX.ox - 10, AX.y1 - 54, { font: SANS, size: 42, weight: 700, align: 'left', color: ICE, alpha: ly });
-    typeText('两把尺子', 540, 500, { ...big, size: 64, weight: 900 }, prog(t, L(5) + .2, L(5) + 1.0), A * (1 - sstep(L(7) - .4, L(7), t)));
+    typeText('两把尺子', 540, 500, { ...big, size: 64, weight: 900 }, prog(t, L(5) + .2, L(5) + 1.0), A * (1 - sstep(L(6) + 1.1, L(6) + 1.5, t)));
     // 四个格子（虚线），回避型在左上：不太怕被丢下、很怕太近
     const grid = sstep(L(6) + 2.4, L(6) + 3.0, t) * A;
     if (grid > 0) { ctx.save(); ctx.globalAlpha = grid * .35; ctx.strokeStyle = CREAM; ctx.setLineDash([8, 10]); ctx.lineWidth = 2;
@@ -342,14 +341,14 @@ function sceneRulers(t) {
     const fill = sstep(L(7) + 1.2, L(7) + 2.0, t) * A, left = sstep(L(8) + 2.4, L(8) + 3.2, t);
     if (fill > 0) { ctx.save(); ctx.globalAlpha = fill; const g = ctx.createLinearGradient(0, AX.y1, 0, QUAD_Y); g.addColorStop(0, 'rgba(120,170,255,.24)'); g.addColorStop(1, 'rgba(120,170,255,.04)');
       ctx.fillStyle = g; ctx.fillRect(AX.ox + 2, AX.y1, AX.x1 - AX.ox - 2, QUAD_Y - AX.y1); ctx.restore();
-      pill('回避型', 720, 830, fill, { color: ICE, stroke: `rgba(${ICE_RGB},.6)`, glow: `rgba(${ICE_RGB},.5)`, size: 44 }); }
+      pill('回避型', QUAD_X, 840, fill, { color: ICE, stroke: `rgba(${ICE_RGB},.6)`, glow: `rgba(${ICE_RGB},.5)`, size: 44 }); }
     // 投影：怕太亲近“高”；其中有一种，怕被抛弃“低”
     const pj2 = sstep(L(8) + .2, L(8) + .7, t) * A, pj1 = sstep(L(8) + 3.0, L(8) + 3.5, t) * A, dx = dotX(t);
     for (const [k, x1, y1, x2, y2] of [[pj1, dx, DOT.y, dx, AX.oy], [pj2, dx, DOT.y, AX.ox, DOT.y]]) if (k > 0) {
       ctx.save(); ctx.globalAlpha = k * .7; ctx.strokeStyle = ICE; ctx.setLineDash([6, 8]); ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(lerp(x1, x2, k), lerp(y1, y2, k)); ctx.stroke(); ctx.restore(); }
     text('低', dx, AX.oy + 60, { font: SANS, size: 46, weight: 900, align: 'center', color: ICE, alpha: pj1 });
     text('高', AX.ox - 44, DOT.y, { font: SANS, size: 46, weight: 900, align: 'center', color: ICE, alpha: pj2 });
-    text('其中一种', DOT.x + 10, DOT.y - 62, { font: SANS, size: 42, weight: 700, align: 'center', color: ICE, alpha: A * left * (1 - sstep(L(9) - .2, L(9) + .2, t)) });
+    text('其中一种', dx + 34, DOT.y, { font: SANS, size: 42, weight: 700, align: 'left', color: '#e3f1ff', alpha: A * left * (1 - sstep(L(9) - .2, L(9) + .2, t)) });
   }
   // 那个点：从原点沿着竖尺往上爬，停在左上；然后分成四个人
   const rise = E.io(prog(t, L(7) + .2, L(7) + 1.6));
@@ -427,7 +426,7 @@ function sceneShell(t) {
   monitor(t);
   // 宝宝那一段：仪器上显示“心跳 ↑”；大人：“没什么。”
   say('小时候，被父母拒绝过吗？', 330, 800, win(t, L(16) + .2, L(17) + 1.6, .3, .4), WARMC, 40);
-  say('没什么。', x + 130, y - 160 * (s / 1.25), win(t, L(17) + .2, L(18) - .2, .25, .4), ICE, 46);
+  say('没什么。', x + 150, y - 200 * (s / 1.25), win(t, L(17) + .2, L(18) - .2, .25, .4), ICE, 46);
   const fast = sstep(L(14) + 2.0, L(14) + 2.5, t) * (1 - sstep(L(15) + 1.0, L(15) + 1.5, t));      // 大字：一直很快
   typeText('一直很快', 540, 820, { ...big, size: 72, weight: 900, color: '#ff9a7a', glow: 'rgba(255,154,122,.5)', glowBlur: 24 }, prog(t, L(14) + 2.0, L(14) + 2.6), fast);
   const bigA = sstep(L(18) + .4, L(18) + 1.0, t) * (1 - sstep(L(19) - .1, L(19) + .4, t));
@@ -514,7 +513,7 @@ function sceneOrigin(t) {
     const shake = sstep(L(26) + .8, L(26) + 4.3, t), jit = (Math.sin(t * 61) + Math.sin(t * 37)) * 1.6 * shake * (1 - rebound);
     const land = Math.exp(-Math.max(0, t - L(24) - 4.4) * 9) * (t > L(24) + 4.4 ? 1 : 0);                // 压到底时轻轻一弹
     const ry = lerp(1, .32, pressed * (1 - rebound)) * (1 - .12 * land) * (1 + .25 * Math.sin(PI * prog(t, L(26) + 4.4, L(26) + 5.2)) * rebound);
-    const bright = lerp(1, .38, pressed) * (1 - rebound) + rebound * (1 + .6 * Math.exp(-Math.max(0, t - L(26) - 4.5) * 2));
+    const bright = lerp(1, .5, pressed) * (1 - rebound) + rebound * (1 + .6 * Math.exp(-Math.max(0, t - L(26) - 4.5) * 2));
     const flick = pressed > .5 && rebound < 1 ? .75 + .25 * Math.sin(t * 13) * Math.sin(t * 7.3) : 1;
     ctx.save(); ctx.translate(fx + jit, fcy + 4 * fs * (1 - ry)); ctx.scale(fs, fs * ry);
     glow(0, 0, 11, '255,180,110', need * bright * flick, 7); ctx.restore();
@@ -540,10 +539,10 @@ function sceneOrigin(t) {
   const load = zk * win(t, L(26) + .4, L(26) + 4.6, .5, .3);
   if (load > 0) ['7', '3', '9', '1', '4', '8', '2'].forEach((d, i) => {
     const k = sstep(L(26) + .4 + i * .22, L(26) + .7 + i * .22, t), ang = i / 7 * TAU + t * .9, R = 360 + 30 * Math.sin(t * 2 + i);
-    text(d, 540 + Math.cos(ang) * R * .95, 890 + Math.sin(ang) * R * .9, { font: SERIF, size: 64, weight: 700, align: 'center', color: CREAM, alpha: load * k * .75 });
+    text(d, 540 + Math.cos(ang) * R * .95, 880 + Math.sin(ang) * R * .8, { font: SERIF, size: 64, weight: 700, align: 'center', color: CREAM, alpha: load * k * .75 });
   });
   text('一分心', 540, 440, { font: SERIF, size: 64, weight: 900, align: 'center', color: CREAM, alpha: load });
-  text('实验里：一边记一串 7 位数', 540, 1260, { font: SANS, size: 34, weight: 500, align: 'center', color: CREAM, alpha: load * .8 });
+  text('实验里：一边记一串 7 位数', 540, 1290, { font: SANS, size: 34, weight: 500, align: 'center', color: CREAM, alpha: load * .8 });
   const back = zk * sstep(L(26) + 4.6, L(26) + 5.0, t);
   const bs = pop(t, L(26) + 4.6) || 1;
   ctx.save(); ctx.translate(540, 440); ctx.scale(bs, bs);
@@ -556,7 +555,7 @@ function sceneHow(t) {
   const A = sstep(S5 - .5, S5 + .6, t), FS = F5.s, FY = F5.floor - 30 * FS, TY = F5.floor - 80 * FS, CY = chestY(FY, FS);
   floor(F5.floor, 80, 1000, A);
   // 回避型（右）和爱着他的人（左）
-  const ax = track([[0, 700], [L(28) + .1, 700], [L(28) + .6, 760, E.out], [L(32) + .2, 760], [L(32) + .6, 800, E.out], [L(32) + 1.0, 800], [L(32) + 1.4, 840, E.out], [L(33) + .9, 840], [L(33) + 1.5, 815, E.out], [L(35) + 1.5, 815], [L(35) + 4.2, 600]])(t);
+  const ax = track([[0, 700], [L(28) + .1, 700], [L(28) + .6, 760, E.out], [L(32) + .2, 760], [L(32) + .6, 800, E.out], [L(32) + 1.0, 800], [L(32) + 1.4, 840, E.out], [L(33) + .9, 840], [L(33) + 1.5, 815, E.out], [L(35) + 1.5, 815], [L(35) + 4.2, 640]])(t);
   const px = track([[0, 300], [L(32) + .05, 300], [L(32) + .45, 380, E.out], [L(32) + .95, 380], [L(32) + 1.35, 440, E.out], [L(33) + .1, 440], [L(33) + .7, 400]])(t);
   const warmUp = E.io(prog(t, L(35) + .5, L(35) + 4.5));
   const acol = mixc(COOL, WARMC, warmUp);
@@ -621,7 +620,7 @@ function WORLD(t) {
 }
 function SAMPLES(T) {
   const many = [[L(4) + .3, L(4) + 1.25]];                                                               // 钻进门缝：放大得太快，要多采样才不出重影
-  const more = [[L(2) + 2.4, L(2) + 3.1], [L(12) + 1.1, L(12) + 2.5], [L(12) + 2.9, L(12) + 4.2], [S3 - 1.5, S3 + .3], [L(21) + 2.3, L(21) + 3.3]];
+  const more = [[L(2) + 2.3, L(2) + 3.4], [L(12) + 1.1, L(12) + 2.5], [L(12) + 2.9, L(12) + 4.2], [S3 - 1.5, S3 + .3], [L(21) + 2.3, L(21) + 3.3]];
   const fast = [[L(4), L(4) + 1.4], [S2 - .2, S2 + 1.2], [L(9), L(9) + 1.6], [L(12) - .4, L(12) + 1.1], [L(15) - .2, L(15) + 1.3], [L(19), L(19) + 1.9],
     [L(24) - .1, L(24) + 1.1], [L(26) + 4.3, L(26) + 5.2], [L(26) + 5.4, S5 + 1], [L(29), L(29) + 3.2], [L(34) + .5, L(34) + 2.3]];
   const in_ = r => r.some(([a, b]) => T > a && T < b);
@@ -651,7 +650,7 @@ function CUES() {
   // ① 一进一退：脚步；吵架；门关上；敲门；钻进门缝
   for (const tt of [L(0) + 1.0, L(1) + .3]) c.push([tt, 'tick', { gain: .05 }]);
   for (const tt of [L(0) + 2.1, L(1) + 1.1]) c.push([tt, 'swish', { dur: .4, gain: .05 }]);
-  c.push([L(2) + .1, 'crack', { gain: .06 }], [L(2) + 2.95, 'thud', { gain: .14 }], [L(2) + 3.0, 'slap', { gain: .08, pan: .4 }]);
+  c.push([L(2) + .1, 'crack', { gain: .06 }], [L(2) + 2.85, 'tick', { gain: .06 }], [L(2) + 3.15, 'thud', { gain: .14 }], [L(2) + 3.2, 'slap', { gain: .08, pan: .4 }]);
   c.push([L(3) + 2.0, 'thunk', { gain: .07 }], [L(3) + 2.3, 'thunk', { gain: .06 }]);
   c.push([L(4) + .1, 'riser', { dur: 1.0, gain: .12 }], [L(4) + 1.05, 'swell', { dur: .9, f: D_SWELL, gain: .1 }], [L(4) + 1.1, 'shimmer', { f: D_SHIM, gain: .1 }]);
   // ② 尺子：落下来、刻度、点往上爬、分成四个人
