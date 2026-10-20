@@ -162,17 +162,18 @@ function narration(T) {
     const g = ctx.createLinearGradient(0, 1250, 0, 1620); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(.5, `rgba(0,0,0,${.42 * shade})`); g.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = g; ctx.fillRect(0, 1250, W, 370);
   }
-  for (const [a, b, s] of LINES) {
-    if (T < a || T > b + .7) continue;
+  LINES.forEach(([a, b, s], k) => {
+    const next = LINES[k + 1] ? LINES[k + 1][0] : Infinity, fe = Math.max(b + .15, Math.min(b + .6, next - .05));   // 下一句开始之前淡出完，两句不叠在一起
+    if (T < a || T > fe + .1) return;
     if (!WRAP_CACHE.has(s)) WRAP_CACHE.set(s, wrapRuns(runs(s), NARR, NARR.max));
     const lines = WRAP_CACHE.get(s);
-    const fade = 1 - sstep(b, b + .6, T), drift = -16 * E.in(prog(T, b, b + .7));
+    const fade = 1 - sstep(b, fe, T), drift = -16 * E.in(prog(T, b, fe + .1));
     const n = lines.reduce((k, l) => k + l.length, 0), dur = Math.min(1.2, .3 + n * .03);
     lines.forEach((ln, i) => {
       const t0 = a + i * .22;
       typeRun(ln, NARR.x, NARR.y + (i - (lines.length - 1)) * NARR.lh + drift, { ...NARR, glow: 'rgba(0,0,0,.9)', glowBlur: 14 }, prog(T, t0, t0 + dur), fade);
     });
-  }
+  });
 }
 
 // ======================================================================== 右上角的年份 / 出处
@@ -395,7 +396,7 @@ function pop(t, t0) { const k = prog(t, t0, t0 + .45); return k <= 0 ? 0 : 1 + .
 function floor(y, x0, x1, a) { seg(x0, y, x1, y, 'rgba(236,230,218,.28)', 2, a); }
 
 // 一个人。o.baby：0 大人 → 1 一岁宝宝的比例；o.arm：伸手（o.dir 朝向）；o.heart：胸口的光（o.beat 跳一下时变大）；
-// o.gone：从脚往上消失；o.sq：横向压扁（转身）。胸口在 (x, y + s * (top + 30))。
+// o.lift / o.reach：手抬到多高、伸多远；o.gone：从脚往上消失；o.sq：横向压扁（转身）。胸口在 (x, y + s * (top + 30))。
 function figDims(k) { return { hr: lerp(22, 29, k), hy: lerp(-84, -60, k), top: lerp(-54, -30, k), hw: lerp(40, 33, k), bot: 30 }; }
 function chestY(y, s, k = 0) { return y + s * (figDims(k).top + 30); }
 function fig(x, y, s, a, col, o = {}) {
@@ -405,13 +406,14 @@ function fig(x, y, s, a, col, o = {}) {
   if (gone > 0) { ctx.beginPath(); ctx.rect(-300, -500, 600, 500 + lerp(bot + 4, hy - hr - 4, gone)); ctx.clip(); }
   ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.fillStyle = 'rgba(16,17,23,.96)'; ctx.shadowColor = col; ctx.shadowBlur = 8;
   if (o.arm > 0) {                                                                                       // 伸出去的手
-    const d = o.dir || 1, ax = d * (hw - 8), ay = top + 20, ex = ax + d * 50 * o.arm, ey = ay + lerp(34, -22, o.arm);
+    const d = o.dir || 1, ax = d * (hw - 8), ay = top + 20, ex = ax + d * (o.reach || 50) * o.arm, ey = ay + lerp(34, o.lift ?? -22, o.arm);
     ctx.save(); ctx.lineCap = 'round'; ctx.lineWidth = 9 / Math.max(.5, s); ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ex, ey); ctx.stroke(); ctx.restore();
   }
   ctx.beginPath(); ctx.arc(0, hy, hr, 0, TAU); ctx.fill(); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(-hw, bot); ctx.lineTo(-hw, top + 32); ctx.quadraticCurveTo(-hw, top + 2, -hw + 28, top); ctx.lineTo(hw - 28, top);
   ctx.quadraticCurveTo(hw, top + 2, hw, top + 32); ctx.lineTo(hw, bot); ctx.closePath(); ctx.fill(); ctx.stroke();
-  if (o.tear > 0) { ctx.save(); ctx.globalAlpha *= o.tear; ctx.fillStyle = ICE; ctx.beginPath(); const ty = hy + 6 + 18 * o.tearY; ctx.moveTo(hr * .45, ty - 9); ctx.quadraticCurveTo(hr * .45 + 7, ty + 2, hr * .45, ty + 5); ctx.quadraticCurveTo(hr * .45 - 7, ty + 2, hr * .45, ty - 9); ctx.fill(); ctx.restore(); }
+  if (o.tear > 0) { ctx.save(); ctx.globalAlpha *= o.tear * (1 - sstep(.75, 1, o.tearY)); ctx.fillStyle = ICE; ctx.shadowColor = ICE; ctx.shadowBlur = 8; ctx.translate(hr * .42, hy + 2 + 10 * o.tearY); ctx.scale(1.7, 1.7);
+    ctx.beginPath(); ctx.moveTo(0, -7); ctx.quadraticCurveTo(5.5, 2, 0, 4.5); ctx.quadraticCurveTo(-5.5, 2, 0, -7); ctx.fill(); ctx.restore(); }
   ctx.restore();
   if (o.heart > 0) {
     const cy = y + s * (top + 30), r = s * (4 + 3 * (o.beat || 0));
@@ -468,7 +470,7 @@ function frost(cx, cy, R, a, t, seed = 5) {
 // ======================================================================== 心跳（画面和音效共用一张表）
 // 每秒跳几下：宝宝平时 1.5，“心跳加快”时升到 2.9；长大以后 1.2，说“没什么”之后升到 2.1
 function rateAt(u) {
-  const up1 = sstep(L(14) + 1.0, L(14) + 2.8, u), adult = sstep(L(15), L(15) + 1.2, u), up2 = sstep(L(17) + .9, L(17) + 2.4, u);
+  const up1 = sstep(L(14) + 1.0, L(14) + 2.8, u), adult = sstep(L(16), L(16) + 1.0, u), up2 = sstep(L(17) + .9, L(17) + 2.4, u);
   return lerp(lerp(1.5, 2.9, up1), lerp(1.2, 2.1, up2), adult);
 }
 const PH_T0 = 40, PH_DT = 1 / 200;
@@ -485,60 +487,66 @@ function scr(u) { const t0 = L(17) + 1.3; return .12 + .02 * Math.sin(u * 2.3) +
 
 // ======================================================================== ① 问题（0 – S2）：越喜欢，越想躲
 const FLOOR1 = 1040, DOOR = { x0: 800, x1: 940, y0: 770 };
-function pX(t) { return track([[0, 330], [L(0) + 1.0, 330], [L(0) + 1.6, 410], [L(1) + .3, 410], [L(1) + .9, 480], [L(3) + .2, 470], [L(3) + 1.8, 690]])(t); }
+function pX(t) { return track([[0, 330], [L(0) + 1.0, 330], [L(0) + 1.6, 410], [L(1) + .3, 410], [L(1) + .9, 480], [L(3) + .2, 480], [L(3) + 1.5, 712]])(t); }
 function aX(t) { return track([[0, 640], [L(0) + 2.1, 640], [L(0) + 2.6, 715, E.out], [L(1) + 1.1, 715], [L(1) + 1.6, 790, E.out], [L(2) + 1.4, 790], [L(2) + 2.4, 870]])(t); }
 function sceneOpen(t) {
-  if (t > L(4) + 1.4) return;
+  if (t > L(4) + 2.0) return;
   const zk = E.inExpo(prog(t, L(4) + .1, L(4) + 1.1)), A = 1 - sstep(L(4) + .9, L(4) + 1.2, t);
   const cx = (DOOR.x0 + 4), cy = (DOOR.y0 + FLOOR1) / 2;
+  const camX = track([[0, 480], [L(1) + 1.6, 480], [L(2) + 1.6, 640]])(t);                            // 镜头跟着往右移，门在右边
   ctx.save(); ctx.globalAlpha = A;
-  ctx.translate(540, 960); ctx.scale(1.35, 1.35); ctx.translate(-600, -1000);                         // 镜头：放大 1.35 倍
+  ctx.translate(540, 960); ctx.scale(1.35, 1.35); ctx.translate(-camX, -1000);                         // 镜头：放大 1.35 倍
   if (zk > 0) { const z = 1 + 11 * zk; ctx.translate(cx, cy); ctx.scale(z, z); ctx.translate(-cx, -cy); }
-  floor(FLOOR1, 120, 1000, 1);
+  floor(FLOOR1, 0, 1200, 1);
   const px = pX(t), ax = aX(t), cool = sstep(L(2), L(2) + 1, t);
-  // 门：吵架时出现，人躲进去，门关上；门缝里一道冷光
-  const door = sstep(L(2) + .4, L(2) + 1.0, t), close = E.io(prog(t, L(2) + 2.5, L(2) + 3.0));
+  // 门：吵架时出现；人走进门洞，门板从右往左关上，把他挡在里面；门缝里一道冷光
+  const door = sstep(L(2) + .7, L(2) + 1.2, t), close = E.io(prog(t, L(2) + 2.5, L(2) + 3.0));
+  if (door > 0) {
+    ctx.save(); ctx.globalAlpha *= door; ctx.fillStyle = 'rgba(120,170,255,.10)'; ctx.fillRect(DOOR.x0, DOOR.y0, DOOR.x1 - DOOR.x0, FLOOR1 - DOOR.y0); ctx.restore();
+  }
+  // 两个人之间的线：越拉越紧；门关到一半时被夹断，两截往回弹
+  const snapT = L(2) + 2.7, snap = E.out(prog(t, snapT, snapT + .5));
+  const d = Math.abs(ax - px), sag = Math.max(0, 70 - d * .12), lw = Math.max(1.5, 4 - d / 200), ty = FLOOR1 - 80;
+  const flick = .75 + .25 * Math.sin(t * 23) * sstep(400, 520, d), ta = flick * sstep(.05, .5, t + .5);
+  if (t < snapT) thread(px + 30, ty, ax - 30, ty, ta, W_RGB, sag, lw);
+  else if (snap < 1) {
+    const mx = DOOR.x1 - (DOOR.x1 - DOOR.x0) * .55, k = 1 - snap;
+    thread(px + 30, ty, lerp(px + 30, mx, k), ty + 30 * snap, ta * k, W_RGB, 6 * k, lw);              // 左边那截弹回去、垂下来
+    glow(mx, ty, 4, W_RGB, k * k, 6);
+  }
+  fig(ax, FLOOR1 - 30, 1, 1, mixc('#9fb4d4', COOL, cool), { sq: 1 - .9 * Math.sin(PI * prog(t, L(2) + 1.1, L(2) + 1.5)) });
   if (door > 0) {
     ctx.save(); ctx.globalAlpha *= door; ctx.strokeStyle = 'rgba(236,230,218,.6)'; ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.moveTo(DOOR.x0, FLOOR1); ctx.lineTo(DOOR.x0, DOOR.y0); ctx.lineTo(DOOR.x1, DOOR.y0); ctx.lineTo(DOOR.x1, FLOOR1); ctx.stroke();
-    ctx.fillStyle = 'rgba(120,170,255,.10)'; ctx.fillRect(DOOR.x0, DOOR.y0, DOOR.x1 - DOOR.x0, FLOOR1 - DOOR.y0); ctx.restore();
+    ctx.beginPath(); ctx.moveTo(DOOR.x0, FLOOR1); ctx.lineTo(DOOR.x0, DOOR.y0); ctx.lineTo(DOOR.x1, DOOR.y0); ctx.lineTo(DOOR.x1, FLOOR1); ctx.stroke(); ctx.restore();
   }
-  const inDoor = sstep(L(2) + 1.6, L(2) + 2.4, t);                                                      // 走进门里：被门框挡住
-  ctx.save(); if (inDoor > 0) { ctx.beginPath(); ctx.rect(0, 0, DOOR.x0 + (1 - inDoor) * 400, H); ctx.clip(); }
-  fig(ax, FLOOR1 - 30, 1, 1, mixc('#9fb4d4', COOL, cool), { sq: 1 - .9 * Math.sin(PI * prog(t, L(2) + 1.1, L(2) + 1.5)) });
-  ctx.restore();
   if (close > 0) {
     const w = (DOOR.x1 - DOOR.x0) * close;
     ctx.save(); ctx.fillStyle = '#1a1d26'; ctx.strokeStyle = 'rgba(236,230,218,.7)'; ctx.lineWidth = 3; ctx.fillRect(DOOR.x1 - w, DOOR.y0, w, FLOOR1 - DOOR.y0); ctx.strokeRect(DOOR.x1 - w, DOOR.y0, w, FLOOR1 - DOOR.y0);
-    circ(DOOR.x1 - w + 22, 910, 6, CREAM, close); ctx.restore();
+    ctx.restore(); circ(DOOR.x0 + 22, 910, 6, CREAM, sstep(.9, 1, close));
     const crack = sstep(L(2) + 2.9, L(2) + 3.3, t);                                                    // 门缝里的冷光
     if (crack > 0) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = `rgba(${ICE_RGB},${.85 * crack})`; ctx.shadowColor = `rgba(${ICE_RGB},1)`; ctx.shadowBlur = 20;
       ctx.fillRect(DOOR.x0 + 1, DOOR.y0 + 4, 5, FLOOR1 - DOOR.y0 - 4); ctx.fillRect(DOOR.x0, FLOOR1 - 4, DOOR.x1 - DOOR.x0, 3); ctx.restore(); }
-  }
-  // 两个人之间的线：越拉越紧，门一关就断了
-  const cut = sstep(L(2) + 2.3, L(2) + 2.6, t);
-  if (cut < 1) {
-    const d = Math.abs(ax - px), sag = Math.max(0, 70 - d * .12), flick = .75 + .25 * Math.sin(t * 23) * sstep(400, 520, d);
-    thread(px + 30, FLOOR1 - 80, ax - 30, FLOOR1 - 80, (1 - cut) * flick * sstep(.05, .5, t + .5), W_RGB, sag, Math.max(1.5, 4 - d / 200));
   }
   // 吵架：两个人之间炸开一道火花
   const spark = win(t, L(2) + .1, L(2) + 1.0, .1, .5);
   if (spark > 0) { const mx = (px + ax) / 2, r = mulberry(77); ctx.save(); ctx.globalAlpha = spark; ctx.strokeStyle = '#ff8a5c'; ctx.lineWidth = 4; ctx.shadowColor = '#ff8a5c'; ctx.shadowBlur = 16; ctx.lineJoin = 'miter';
     ctx.beginPath(); ctx.moveTo(mx - 30, 880); for (let i = 1; i <= 5; i++) ctx.lineTo(mx - 30 + i * 12, 880 + (i % 2 ? -26 : 22) * (.6 + .4 * r())); ctx.stroke(); ctx.restore();
-    say('……', ax, 840, spark * sstep(L(2) + .5, L(2) + .8, t), COOL, 30); }
-  // 爱着他的那个人：走到门口，敲门
-  const pw = sstep(L(3), L(3) + 1, t);
-  fig(px, FLOOR1 - 30, 1, 1, WARMC, { heart: pw * .8, arm: E.out(prog(t, L(3) + 1.7, L(3) + 2.0)) * (1 - sstep(L(3) + 2.5, L(3) + 2.8, t)), dir: 1 });
+    say('……', ax - 50, 820, spark * sstep(L(2) + .5, L(2) + .8, t), COOL, 30); }
+  // 爱着他的那个人：走到门口，抬手敲门（拳头碰到门板）
+  const pw = sstep(L(3), L(3) + 1, t), KN = [L(3) + 2.0, L(3) + 2.3];
+  const raise = E.out(prog(t, L(3) + 1.6, L(3) + 1.9)) * (1 - sstep(L(3) + 2.7, L(3) + 3.0, t));
+  const jab = KN.reduce((m, k) => Math.max(m, Math.max(0, 1 - Math.abs(t - k) / .09)), 0);
+  fig(px, FLOOR1 - 30, 1, 1, WARMC, { heart: pw * .8, arm: raise * (.82 + .18 * jab), lift: 2, reach: 64, dir: 1 });
   if (pw > 0) warmth(pw * .5 * A, px, 960, 380);
-  for (const k of [L(3) + 2.0, L(3) + 2.3]) { const p = prog(t, k, k + .6); if (p > 0 && p < 1) { ctx.save(); ctx.globalAlpha = (1 - p) * .7; ctx.strokeStyle = CREAM; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(DOOR.x1 - 70, 900, 10 + 40 * p, 0, TAU); ctx.stroke(); ctx.restore(); } }
+  for (const k of KN) { const p = prog(t, k, k + .6); if (p > 0 && p < 1) { ctx.save(); ctx.globalAlpha = (1 - p) * .8; ctx.strokeStyle = CREAM; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(DOOR.x0 + 10, FLOOR1 - 64, 8 + 40 * p, 0, TAU); ctx.stroke(); ctx.restore(); } }
   ctx.restore();
   // 开头大字（第一帧就是封面）
   const hook = 1 - sstep(L(2) - .2, L(2) + .3, t);
   if (hook > 0) {
-    text('越喜欢，', 540, 520, { size: 92, weight: 900, align: 'center', color: CREAM, alpha: hook, glow: 'rgba(255,225,190,.25)', blur: 30 });
-    text('越想躲', 540, 640, { size: 112, weight: 900, align: 'center', color: ICE, alpha: hook, glow: `rgba(${ICE_RGB},.5)`, blur: 36 });
+    text('越喜欢，', 540, 500, { size: 118, weight: 900, align: 'center', color: CREAM, alpha: hook, glow: 'rgba(255,225,190,.25)', blur: 30 });
+    text('越想躲', 540, 650, { size: 150, weight: 900, align: 'center', color: ICE, alpha: hook, glow: `rgba(${ICE_RGB},.5)`, blur: 40 });
   }
-  // 门缝被推到眼前：一片冷白的光
+  // 门缝被推到眼前：一片冷白的光，再慢慢退成题目后面的冷光
   const flash = Math.max(0, zk * zk) * (1 - sstep(L(4) + 1.1, L(4) + 1.9, t));
   if (flash > 0) { ctx.save(); ctx.fillStyle = `rgba(225,238,255,${.9 * flash})`; ctx.fillRect(0, 0, W, H); ctx.restore(); }
 }
@@ -550,11 +558,13 @@ function sceneTitle(t) {
   const e = E.outExpo(prog(t, t0, t0 + 1.2)), out = E.io(prog(t, S2 - .1, S2 + .6)), A = sstep(t0, t0 + .3, t) * (1 - out);
   chill(.7 * A, 540, 820, 700);
   if (A > 0) {
-    ctx.save(); ctx.translate(540, TITLE_Y - 120 * out); const sc = 1.25 - .25 * e; ctx.scale(sc, sc);
+    ctx.save(); ctx.translate(540, TITLE_Y - 120 * out); const sc = (1.25 - .25 * e) * (1 + .06 * E.ioSine(prog(t, t0 + 1.0, S2 + .4))); ctx.scale(sc, sc);
     ctx.filter = e < .97 ? `blur(${((1 - e) * 16).toFixed(1)}px)` : 'none';
     text('回避型依恋', 0, 0, { size: 128, weight: 900, align: 'center', color: ICE, alpha: A, glow: `rgba(${ICE_RGB},.55)`, blur: 40 });
     ctx.restore();
     seriesTag(TITLE_Y - 130, A * sstep(t0 + .4, t0 + 1.0, t));
+    for (let i = 0; i < 26; i++) { const r = mulberry(4700 + i), p = ((t - t0) * (.05 + .07 * r()) + r()) % 1;            // 慢慢往上飘的冷光点
+      glow(120 + r() * 840, 1250 - p * 760, 1.2 + 2.2 * r(), ICE_RGB, A * Math.sin(PI * p) * .7, 4); }
     typeText('不是不会爱，只是爱得很小心', 540, TITLE_Y + 190, { size: 42, weight: 700, font: SERIF, color: GOLD, align: 'center', spread: 4, glow: `rgba(${O_RGB},.35)`, glowBlur: 14 }, prog(t, t0 + 1.0, t0 + 2.2), A);
   }
   // 下面那一笔：先在题目下画出来，再落下去、拉长，成了横轴
@@ -587,8 +597,8 @@ function sceneRulers(t) {
     const glowX = Math.exp(-Math.max(0, t - L(6) - .3) * 1.6) * lx, glowY = Math.exp(-Math.max(0, t - L(6) - 1.8) * 1.6) * ly;
     if (glowX > .02) seg(AX.ox, AX.oy, AX.x1, AX.oy, `rgba(${O_RGB},.9)`, 6, glowX);
     if (glowY > .02) seg(AX.ox, AX.oy, AX.ox, AX.y1, `rgba(${ICE_RGB},.9)`, 6, glowY);
-    text('怕被抛弃  →', AX.x1, AX.oy + 56, { font: SANS, size: 34, weight: 700, align: 'right', color: WARMC, alpha: lx });
-    text('↑  怕太亲近', AX.ox - 10, AX.y1 - 50, { font: SANS, size: 34, weight: 700, align: 'left', color: ICE, alpha: ly });
+    text('怕被抛弃  →', AX.x1, AX.oy + 60, { font: SANS, size: 42, weight: 700, align: 'right', color: WARMC, alpha: lx });
+    text('↑  怕太亲近', AX.ox - 10, AX.y1 - 54, { font: SANS, size: 42, weight: 700, align: 'left', color: ICE, alpha: ly });
     typeText('两把尺子', 540, 500, { ...big, size: 64, weight: 900 }, prog(t, L(5) + .2, L(5) + 1.0), A * (1 - sstep(L(7) - .4, L(7), t)));
     // 四个格子（虚线），回避型在左上：不太怕被丢下、很怕太近
     const grid = sstep(L(6) + 2.4, L(6) + 3.0, t) * A;
@@ -597,54 +607,54 @@ function sceneRulers(t) {
     const fill = sstep(L(7) + 1.2, L(7) + 2.0, t) * A, left = sstep(L(8) + 2.4, L(8) + 3.2, t);
     if (fill > 0) { ctx.save(); ctx.globalAlpha = fill; const g = ctx.createLinearGradient(0, AX.y1, 0, QUAD_Y); g.addColorStop(0, 'rgba(120,170,255,.24)'); g.addColorStop(1, 'rgba(120,170,255,.04)');
       ctx.fillStyle = g; ctx.fillRect(AX.ox + 2, AX.y1, AX.x1 - AX.ox - 2, QUAD_Y - AX.y1); ctx.restore();
-      pill('回避型', 720, 840, fill, { color: ICE, stroke: `rgba(${ICE_RGB},.6)`, glow: `rgba(${ICE_RGB},.5)` }); }
+      pill('回避型', 720, 830, fill, { color: ICE, stroke: `rgba(${ICE_RGB},.6)`, glow: `rgba(${ICE_RGB},.5)`, size: 44 }); }
     // 投影：怕太亲近“高”；其中有一种，怕被抛弃“低”
     const pj2 = sstep(L(8) + .2, L(8) + .7, t) * A, pj1 = sstep(L(8) + 3.0, L(8) + 3.5, t) * A, dx = dotX(t);
     for (const [k, x1, y1, x2, y2] of [[pj1, dx, DOT.y, dx, AX.oy], [pj2, dx, DOT.y, AX.ox, DOT.y]]) if (k > 0) {
       ctx.save(); ctx.globalAlpha = k * .7; ctx.strokeStyle = ICE; ctx.setLineDash([6, 8]); ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(lerp(x1, x2, k), lerp(y1, y2, k)); ctx.stroke(); ctx.restore(); }
-    text('低', dx, AX.oy + 56, { font: SANS, size: 34, weight: 900, align: 'center', color: ICE, alpha: pj1 });
-    text('高', AX.ox - 40, DOT.y, { font: SANS, size: 34, weight: 900, align: 'center', color: ICE, alpha: pj2 });
-    text('其中一种', DOT.x, DOT.y - 56, { font: SANS, size: 28, weight: 700, align: 'center', color: ICE, alpha: A * left * (1 - sstep(L(9) - .2, L(9) + .2, t)) });
+    text('低', dx, AX.oy + 60, { font: SANS, size: 46, weight: 900, align: 'center', color: ICE, alpha: pj1 });
+    text('高', AX.ox - 44, DOT.y, { font: SANS, size: 46, weight: 900, align: 'center', color: ICE, alpha: pj2 });
+    text('其中一种', DOT.x + 10, DOT.y - 62, { font: SANS, size: 42, weight: 700, align: 'center', color: ICE, alpha: A * left * (1 - sstep(L(9) - .2, L(9) + .2, t)) });
   }
   // 那个点：从原点沿着竖尺往上爬，停在左上；然后分成四个人
   const rise = E.io(prog(t, L(7) + .2, L(7) + 1.6));
   if (t >= L(7)) {
     const appear = sstep(L(7), L(7) + .3, t), split = E.io(prog(t, L(9) + .2, L(9) + 1.3)), become = sstep(L(9) + .9, L(9) + 1.5, t);
     let x = rise < 1 ? QUAD_X : dotX(t), y = lerp(AX.oy, DOT.y, rise);
-    const walk = E.io(prog(t, S3 - .3, S3 + 1.2)), fade = sstep(S3 - .5, S3 + .1, t);
+    const walk = E.io(prog(t, S3 - 1.4, S3 + .2)), fade = sstep(S3 - 1.6, S3 - .6, t), dimOthers = sstep(L(9) + 3.0, L(9) + 4.4, t);
     ROW4.forEach((rx, i) => {
       const lit = i === 3, px = lerp(lerp(x, ROW4[3], E.io(prog(t, L(9) + .1, L(9) + .9))), rx, split), py = lerp(y, ROW_Y, E.io(prog(t, L(9) + .1, L(9) + .9)));
       if (!lit && split <= 0) return;
-      if (lit && t > S3 + 1.2) return;                                                                    // 走到镜头前以后，交给 sceneShell
-      const a2 = lit ? 1 : (1 - fade);
+      if (lit && t > S3 + .2) return;                                                                     // 走到镜头前以后，交给 sceneShell
+      const a2 = lit ? 1 : (1 - fade) * (1 - .6 * dimOthers);
       if (become < 1) glow(px, py, 9, lit ? ICE_RGB : C_RGB, appear * a2 * (1 - become), 6);
       if (become > 0) {
         const fx = lit ? lerp(px, 540, walk) : px, fy = lit ? lerp(py, 1010, walk) : py, s = lit ? lerp(.62, 2.0, walk) * become : .62 * become;
         fig(fx, fy, s, a2, lit ? COOL : '#5d6472', { heart: 0 });
-        if (lit) chill(.5 * become * (1 - walk * .5), fx, fy - 40, 220);
+        if (lit) { chill((.5 + .3 * dimOthers * (.5 + .5 * Math.sin(t * 3))) * become * (1 - walk * .5), fx, fy - 40, 220); }
       }
     });
     const q = sstep(L(9) + 2.0, L(9) + 2.5, t) * (1 - fade);
     const ps = pop(t, L(9) + 2.0);
     ctx.save(); ctx.translate(540, 770); if (ps) ctx.scale(ps, ps);
-    text('≈ 1/4', 0, 0, { font: LAT, size: 120, weight: 600, align: 'center', color: ICE, alpha: q, glow: `rgba(${ICE_RGB},.5)`, blur: 26 }); ctx.restore();
-    text('这样形容自己', 540, 860, { font: SANS, size: 30, weight: 700, align: 'center', color: DIM, alpha: q });
+    text('≈ 1/4', 0, 0, { font: SERIF, size: 124, weight: 900, align: 'center', color: ICE, alpha: q, glow: `rgba(${ICE_RGB},.5)`, blur: 26 }); ctx.restore();
+    text('这样形容自己', 540, 880, { font: SANS, size: 42, weight: 700, align: 'center', color: DIM, alpha: q });
   }
 }
 
 // ======================================================================== ③ 一层壳（S3 – S4）
-const ROOM = { floor: 1160, door: [140, 300, 800] }, MOM = 1.3, BABY = .8;
+const ROOM = { floor: 1170, door: [110, 290, 740] }, MOM = 1.6, BABY = 1.0;
 function sceneShell(t) {
   if (t < S3 - .2 || t > S4 + 2.2) return;
   // 大人（冷）：S3 起站在镜头前；L12 缩回一岁的宝宝；L15 在心电图上长回大人；L18 长出一层壳；S4 倒带
   const toBaby = E.io(prog(t, L(12) - .3, L(12) + 1.0)), toAdult = E.io(prog(t, L(15) - .1, L(15) + 1.2)), center = E.io(prog(t, L(18) - .4, L(18) + .6));
   const babyK = toBaby * (1 - toAdult);
-  let x = lerp(540, 700, toBaby), y = lerp(1010, ROOM.floor - 30 * BABY, toBaby), s = lerp(2.0, BABY, toBaby);
-  if (toAdult > 0) { x = lerp(x, 620, toAdult); y = lerp(y, 1110, toAdult); s = lerp(s, 1.55, toAdult); }
+  let x = lerp(540, 690, toBaby), y = lerp(1010, ROOM.floor - 30 * BABY, toBaby), s = lerp(2.0, BABY, toBaby);
+  if (toAdult > 0) { x = lerp(x, 620, toAdult); y = lerp(y, 1120, toAdult); s = lerp(s, 1.9, toAdult); }
   if (center > 0) { x = lerp(x, 540, center); y = lerp(y, 1050, center); s = lerp(s, 1.8, center); }
   const rew = E.io(prog(t, L(19) + .2, L(19) + 1.7));                                                   // 倒带：缩回小时候（交给 sceneOrigin 接着画）
   if (rew > 0) { x = lerp(x, KID.x, rew); y = lerp(y, KID.y, rew); s = lerp(s, KS, rew); }
-  const A = 1 - sstep(L(19) + 1.5, L(19) + 1.8, t), here = t >= S3 + 1.2 ? 1 : 0;
+  const A = 1 - sstep(L(19) + 1.5, L(19) + 1.8, t), here = t >= S3 + .2 ? 1 : 0;
   if (A <= 0) return;
   const coldA = sstep(L(10), L(10) + 1.2, t) * (1 - toBaby);
   chill(.6 * Math.max(coldA, .4 * (1 - toBaby)), x, y - 100, 520);
@@ -653,19 +663,21 @@ function sceneShell(t) {
   // 房间：门、妈妈、积木（宝宝那一段）
   const room = sstep(L(12) + .2, L(12) + .9, t) * (1 - sstep(L(15) + .2, L(15) + 1.0, t));
   if (room > 0) {
-    floor(ROOM.floor, 120, 960, room);
+    floor(ROOM.floor, 60, 1020, room);
     const [d0, d1, dy] = ROOM.door;
     ctx.save(); ctx.globalAlpha = room; ctx.strokeStyle = 'rgba(236,230,218,.5)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(d0, ROOM.floor); ctx.lineTo(d0, dy); ctx.lineTo(d1, dy); ctx.lineTo(d1, ROOM.floor); ctx.stroke(); ctx.restore();
-    const mx = track([[0, 440], [L(12) + 1.3, 440], [L(12) + 2.3, 220], [L(12) + 3.0, 220], [L(12) + 4.0, 440]])(t);
-    const inside = sstep(L(12) + 1.9, L(12) + 2.3, t) * (1 - sstep(L(12) + 3.0, L(12) + 3.4, t));
-    fig(mx, ROOM.floor - 30 * MOM, MOM, room * (1 - .85 * inside), WARMC, { sq: t > L(12) + 1.3 && t < L(12) + 2.3 ? -1 : 1 });
-    text('妈妈', mx, ROOM.floor + 46, { font: SANS, size: 26, weight: 700, align: 'center', color: WARMC, alpha: room * (1 - inside) * sstep(L(12) + .6, L(12) + 1.0, t) });
-    text('离开', 220, dy - 40, { font: SANS, size: 26, weight: 700, align: 'center', color: DIM, alpha: room * win(t, L(12) + 1.8, L(12) + 3.0, .2, .3) });
-    text('回来', 220, dy - 40, { font: SANS, size: 26, weight: 700, align: 'center', color: GOLD, alpha: room * win(t, L(12) + 3.1, L(12) + 4.6, .2, .3) });
+    const mx = track([[0, 430], [L(12) + 1.3, 430], [L(12) + 2.3, 200], [L(12) + 3.0, 200], [L(12) + 4.0, 430]])(t);
+    const inside = sstep(L(12) + 1.8, L(12) + 2.3, t) * (1 - sstep(L(12) + 3.0, L(12) + 3.5, t));      // 走出门：整个人消失；回来时再出现
+    const moving = win(t, L(12) + 1.2, L(12) + 4.1, .15, .15);
+    fig(mx, ROOM.floor - 30 * MOM, MOM, room * (1 - inside), WARMC);
+    text('妈妈', mx, ROOM.floor + 50, { font: SANS, size: 36, weight: 700, align: 'center', color: WARMC, alpha: room * (1 - moving) * sstep(L(12) + .6, L(12) + 1.0, t) });
+    text('宝宝', 690, ROOM.floor + 50, { font: SANS, size: 36, weight: 700, align: 'center', color: '#9db7de', alpha: room * sstep(L(12) + .9, L(12) + 1.3, t) });
+    text('离开', 200, dy - 44, { font: SANS, size: 38, weight: 700, align: 'center', color: DIM, alpha: room * win(t, L(12) + 1.8, L(12) + 3.0, .2, .3) });
+    text('回来', 200, dy - 44, { font: SANS, size: 38, weight: 700, align: 'center', color: GOLD, alpha: room * win(t, L(12) + 3.1, L(12) + 4.6, .2, .3) });
     [[L(13) + .4, 0], [L(13) + 1.4, 1], [L(13) + 2.4, 2]].forEach(([t0, i]) => {                         // 继续玩积木
-      const k = E.outQuint(prog(t, t0, t0 + .4)), bx = 810 + (i === 1 ? 8 : 0), by = ROOM.floor - 22 - i * 44 - 50 * (1 - k);
+      const k = E.outQuint(prog(t, t0, t0 + .4)), bx = 830 + (i === 1 ? 10 : 0), by = ROOM.floor - 27 - i * 56 - 60 * (1 - k);
       if (k <= 0) return;
-      ctx.save(); ctx.globalAlpha = room * k; ctx.fillStyle = ['#8fb3e8', '#e8b38f', '#9fd6b8'][i]; ctx.beginPath(); ctx.roundRect(bx - 21, by - 21, 42, 42, 6); ctx.fill(); ctx.restore();
+      ctx.save(); ctx.globalAlpha = room * k; ctx.fillStyle = ['#8fb3e8', '#e8b38f', '#9fd6b8'][i]; ctx.beginPath(); ctx.roundRect(bx - 26, by - 26, 52, 52, 8); ctx.fill(); ctx.restore();
     });
   }
   // 那个人本身：心跳从 L14 起看得见
@@ -673,14 +685,16 @@ function sceneShell(t) {
   const beat = t > L(14) ? beatPulse(t) : Math.exp(-Math.max(0, t - L(11) - 1.3) * 5) * (t > L(11) + 1.3 ? 1 : 0);
   const col = mixc(mixc(COOL, '#9db7de', babyK), '#d8c9b4', rew);
   const shellK = E.io(prog(t, L(18) + .1, L(18) + 1.2));
-  fig(x, y, s, A * here, col, { baby: babyK + rew * .6, heart: Math.min(1, hb + shellK), beat: Math.max(beat, shellK * .4 * (1 + Math.sin(t * 6)) / 2), arm: babyK * win(t, L(13) + .2, L(13) + 3.0, .3, .3) * .55, dir: 1 });
+  fig(x, y, s, A * here, col, { baby: babyK + rew * .6, heart: Math.min(1, hb + shellK), beat: Math.max(beat, shellK * (1.2 + .5 * Math.sin(t * 6))), arm: babyK * win(t, L(13) + .2, L(13) + 3.0, .3, .3) * .55, dir: 1 });
   shell(x, y, s, A, shellK, 1, 11, rew);
   if (shellK > 0) warmth(shellK * .35 * (1 - rew), x, chestY(y, s), 160);
   // 心电图 → 皮肤电
   monitor(t);
   // 宝宝那一段：仪器上显示“心跳 ↑”；大人：“没什么。”
-  say('小时候，被父母拒绝过吗？', 320, 840, win(t, L(16) + .2, L(17) + 1.6, .3, .4), WARMC, 28);
-  say('没什么。', x + 90, y - 200 * (s / 1.25), win(t, L(17) + .2, L(18) - .2, .25, .4), ICE, 32);
+  say('小时候，被父母拒绝过吗？', 330, 800, win(t, L(16) + .2, L(17) + 1.6, .3, .4), WARMC, 40);
+  say('没什么。', x + 130, y - 160 * (s / 1.25), win(t, L(17) + .2, L(18) - .2, .25, .4), ICE, 46);
+  const fast = sstep(L(14) + 2.0, L(14) + 2.5, t) * (1 - sstep(L(15) + 1.0, L(15) + 1.5, t));      // 大字：一直很快
+  typeText('一直很快', 540, 820, { ...big, size: 72, weight: 900, color: '#ff9a7a', glow: 'rgba(255,154,122,.5)', glowBlur: 24 }, prog(t, L(14) + 2.0, L(14) + 2.6), fast);
   const bigA = sstep(L(18) + .4, L(18) + 1.0, t) * (1 - sstep(L(19) - .1, L(19) + .4, t));
   typeText('不在乎，', 540, 500, { ...big, size: 66, weight: 900, color: CREAM }, prog(t, L(18) + .3, L(18) + .9), bigA);
   typeText('是一层壳', 540, 610, { ...big, size: 92, weight: 900, color: ICE, glow: `rgba(${ICE_RGB},.55)`, glowBlur: 32 }, prog(t, L(18) + .8, L(18) + 1.5), bigA);
@@ -689,32 +703,32 @@ const MON = { x0: 170, x1: 910, y: 640, h: 66, pps: 230 };
 function monitor(t) {
   const a = sstep(L(14) - .3, L(14) + .4, t) * (1 - sstep(L(18) - .4, L(18) + .2, t));
   if (a <= 0) return;
-  const mode = sstep(L(16) + .1, L(16) + 1.2, t), hot = sstep(L(14) + 1.0, L(14) + 2.6, t) * (1 - sstep(L(15), L(15) + 1, t)) + sstep(L(17) + 1.2, L(17) + 2.4, t);
+  const mode = sstep(L(16) + .1, L(16) + 1.2, t), hot = sstep(L(14) + 1.0, L(14) + 2.6, t) * (1 - sstep(L(16) + .1, L(16) + 1.0, t)) + sstep(L(17) + 1.2, L(17) + 2.4, t);
   ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = 'rgba(8,12,18,.82)'; ctx.strokeStyle = `rgba(${C_RGB2},.45)`; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.roundRect(MON.x0 - 36, MON.y - 128, MON.x1 - MON.x0 + 72, 222, 24); ctx.fill(); ctx.stroke(); ctx.restore();
   ctx.save(); ctx.globalAlpha = a * .25; ctx.strokeStyle = TEALC; ctx.lineWidth = 1;
   for (let gx = MON.x0; gx <= MON.x1; gx += 37) { ctx.beginPath(); ctx.moveTo(gx, MON.y - 100); ctx.lineTo(gx, MON.y + 70); ctx.stroke(); }
   ctx.restore();
-  text('♥ 心跳', MON.x0, MON.y - 96, { font: SANS, size: 26, weight: 700, color: mixc(TEALC, '#ff9a7a', hot), alpha: a * (1 - mode) });
-  text('皮肤电反应', MON.x0, MON.y - 96, { font: SANS, size: 26, weight: 700, color: mixc(TEALC, '#ff9a7a', hot), alpha: a * mode });
+  text('♥ 心跳', MON.x0, MON.y - 94, { font: SANS, size: 34, weight: 700, color: mixc(TEALC, '#ff9a7a', hot), alpha: a * (1 - mode) });
+  text('皮肤电反应', MON.x0, MON.y - 94, { font: SANS, size: 34, weight: 700, color: mixc(TEALC, '#ff9a7a', hot), alpha: a * mode });
   const col = mixc('#7fe3d3', '#ff9a7a', hot);
   ctx.save(); ctx.globalAlpha = a; ctx.strokeStyle = col; ctx.lineWidth = 4; ctx.lineJoin = 'round'; ctx.shadowColor = col; ctx.shadowBlur = 12;
   ctx.beginPath();
   let hx = MON.x1, hy = MON.y;
   for (let px = MON.x0; px <= MON.x1; px += 2) {
-    const u = t - (MON.x1 - px) / MON.pps, v = lerp(ecgShape(((ph(u) % 1) + 1) % 1), scr(u) * 1.25 - .55, mode);
+    const u = t - (MON.x1 - px) / MON.pps, v = lerp(ecgShape(((ph(u) % 1) + 1) % 1), scr(u) * 2.1 - 1.0, mode);
     const yy = MON.y - MON.h * v; px === MON.x0 ? ctx.moveTo(px, yy) : ctx.lineTo(px, yy); hx = px; hy = yy;
   }
   ctx.stroke(); ctx.restore();
   glow(hx, hy, 5, mode > .5 ? '255,154,122' : '127,227,211', a, 5);
-  const up = a * Math.max(sstep(L(14) + 1.8, L(14) + 2.3, t) * (1 - sstep(L(15) + .3, L(15) + .8, t)), sstep(L(17) + 1.8, L(17) + 2.3, t));
+  const up = a * Math.max(sstep(L(14) + 1.8, L(14) + 2.3, t) * (1 - sstep(L(16) + .1, L(16) + .6, t)), sstep(L(17) + 1.8, L(17) + 2.3, t));
   const ps = Math.max(pop(t, L(14) + 1.8), pop(t, L(17) + 1.8)) || 1;
   ctx.save(); ctx.translate(MON.x1 - 10, MON.y - 96); ctx.scale(ps, ps);
-  text(mode > .5 ? '↑ 明显升高' : '一直很快 ↑', 0, 0, { font: SANS, size: 32, weight: 900, align: 'right', color: '#ff9a7a', alpha: up, glow: 'rgba(255,154,122,.6)', blur: 14 }); ctx.restore();
+  text(mode > .5 ? '↑ 明显升高' : '一直很快 ↑', 0, 0, { font: SANS, size: 40, weight: 900, align: 'right', color: '#ff9a7a', alpha: up, glow: 'rgba(255,154,122,.6)', blur: 14 }); ctx.restore();
 }
 
 // ======================================================================== ④ 怎么来的（S4 – S5）：倒带回小时候；壳一层一层长出来；压下去，又弹回来
-const KS = 1.3, KID = { x: 390, y: 1160 - 30 * KS }, BIGP = { x: 760, y: 1160 - 30 * 1.9 }, F5 = { floor: 1100, s: 1.5 };
+const ROOM4 = 1180, KS = 1.7, BIG_S = 2.4, KID = { x: 360, y: ROOM4 - 30 * KS }, BIGP = { x: 790, y: ROOM4 - 30 * BIG_S }, F5 = { floor: 1100, s: 1.5 };
 function rewindFx(k) {                                                                                    // 倒带：横向的亮线 + 左上角的 ◀◀
   if (k <= 0) return;
   for (let i = 0; i < 26; i++) { const r = mulberry(300 + i), y = 420 + r() * 1000, x = W - ((k * 2.4 + r()) % 1) * (W + 600), len = 140 + 400 * r();
@@ -727,70 +741,78 @@ function sceneOrigin(t) {
   rewindFx(rk < 1 ? rk : 0);
   const born = sstep(L(19) + 1.5, L(19) + 1.8, t);
   if (born <= 0) return;
-  typeText('小时候', 540, 520, { ...big, size: 66, weight: 900, color: GOLD, glow: `rgba(${O_RGB},.4)`, glowBlur: 20 }, prog(t, L(19) + 1.4, L(19) + 2.0), 1 - sstep(L(23) - .2, L(23) + .3, t));
+  typeText('小时候', 540, 520, { ...big, size: 70, weight: 900, color: GOLD, glow: `rgba(${O_RGB},.4)`, glowBlur: 20 }, prog(t, L(19) + 1.4, L(19) + 2.0), 1 - sstep(L(23) - .2, L(23) + .3, t));
   // 镜头推进孩子的胸口（L24 – L26 + 6），再拉回来
   const zin = E.io(prog(t, L(24) - .1, L(24) + 1.0)), zout = E.io(prog(t, L(26) + 5.4, S5 + .6)), zk = zin * (1 - zout);
-  const kid = track([[0, KID.x], [L(21) + .4, KID.x], [L(21) + 1.4, 540], [L(23), 540], [L(23) + .8, 430]])(t);
+  const kid = track([[0, KID.x], [L(21) + .4, KID.x], [L(21) + 1.4, 520], [L(23), 520], [L(23) + .8, 430]])(t);
   const kcy = chestY(KID.y, KS, .6), toA = E.io(prog(t, S5 - 1.6, S5 + .2));                          // 最后：孩子长成大人，走到右边
-  const fx = lerp(kid, 700, toA), fy = lerp(KID.y, F5.floor - 30 * F5.s, toA), fs = lerp(KS, F5.s, toA), fk = lerp(.6, 0, toA);
+  const fx = lerp(kid, 700, toA), fy = lerp(KID.y, F5.floor - 30 * F5.s, toA), fs = lerp(KS, F5.s, toA), fk = lerp(.6, 0, toA), fcy = chestY(fy, fs, fk);
   ctx.save();
-  if (zk > 0) { const z = 1 + 1.1 * zk; ctx.translate(lerp(kid, 540, zk), lerp(kcy, 880, zk)); ctx.scale(z, z); ctx.translate(-kid, -kcy); }
-  floor(1160, 100, 980, born * (1 - zk) * (1 - toA));
-  // 大人：伸手时，不耐烦（转身、走开）；或者没人理（变暗）
+  if (zk > 0) { const z = 1 + .6 * zk; ctx.translate(lerp(kid, 540, zk), lerp(kcy, 880, zk)); ctx.scale(z, z); ctx.translate(-kid, -kcy); }
+  floor(ROOM4, 60, 1020, born * (1 - zk) * (1 - toA));
+  // 大人：孩子伸手要抱，他伸手把孩子推开、往后退（被推开）；然后不耐烦（嫌烦），暗下去
+  const PUSH = L(21) + 2.5, MAD = L(21) + 3.3;
   const adultA = sstep(L(20) + .2, L(20) + .9, t) * (1 - sstep(L(23) + .8, L(23) + 1.6, t)) * (1 - zk);
-  const turn = (t0) => Math.sin(PI * prog(t, t0, t0 + .5));
-  const away = track([[0, BIGP.x], [L(21) + 1.9, BIGP.x], [L(21) + 2.6, 840]])(t), dimmed = sstep(L(21) + 3.0, L(21) + 3.6, t);
-  fig(away, BIGP.y, 1.9, adultA * (1 - .55 * dimmed), mixc('#c9c2b4', '#6a6f7b', dimmed), { sq: 1 - 1.9 * turn(L(21) + 1.8) });
-  const mad = adultA * win(t, L(21) + 1.9, L(21) + 3.0, .15, .3);
-  if (mad > 0) { ctx.save(); ctx.globalAlpha = mad; ctx.strokeStyle = RED; ctx.lineWidth = 4; ctx.beginPath(); const bx = away + 50, by = BIGP.y - 260;
-    ctx.moveTo(bx, by); ctx.lineTo(bx + 14, by - 18); ctx.lineTo(bx + 24, by + 2); ctx.lineTo(bx + 38, by - 16); ctx.stroke(); ctx.restore();
-    text('嫌烦', away, BIGP.y - 310, { font: SANS, size: 28, weight: 700, align: 'center', color: '#ff8f8f', alpha: mad }); }
-  text('被推开', away, BIGP.y + 110, { font: SANS, size: 28, weight: 700, align: 'center', color: DIM, alpha: adultA * win(t, L(21) + 2.0, L(22) + .3, .2, .3) });
-  // 孩子：难过 → 伸手 → 手垂下来；每一次，身上多一层冰
+  const away = track([[0, BIGP.x], [PUSH + .15, BIGP.x], [PUSH + .7, 900, E.out]])(t), dimmed = sstep(MAD + .4, MAD + 1.2, t);
+  const push = E.out(prog(t, PUSH - .1, PUSH + .15)) * (1 - E.io(prog(t, PUSH + .6, PUSH + 1.0)));
+  fig(away, BIGP.y, BIG_S, adultA * (1 - .55 * dimmed), mixc('#c9c2b4', '#6a6f7b', dimmed), { arm: push, lift: 6, reach: 58, dir: -1 });
+  const mad = adultA * win(t, MAD, MAD + 1.3, .15, .3);
+  if (mad > 0) { ctx.save(); ctx.globalAlpha = mad; ctx.strokeStyle = RED; ctx.lineWidth = 5; ctx.lineJoin = 'miter'; ctx.beginPath(); const bx = away + 70, by = BIGP.y - 290;
+    ctx.moveTo(bx, by); ctx.lineTo(bx + 18, by - 22); ctx.lineTo(bx + 30, by + 2); ctx.lineTo(bx + 48, by - 20); ctx.stroke(); ctx.restore();
+    text('嫌烦', away, BIGP.y - 340, { font: SANS, size: 42, weight: 900, align: 'center', color: '#ff8f8f', alpha: mad }); }
+  // 孩子：难过 → 伸手 → 被推得往后一晃、手垂下来；每一次，身上多一圈冰
   const reach = (t0, d) => E.out(prog(t, t0, t0 + d * .35)) * (1 - E.io(prog(t, t0 + d * .65, t0 + d)));
-  const arm = Math.max(reach(L(21) + .5, 3.6), reach(L(22) + .1, 1.0), reach(L(22) + 1.2, 1.0));
+  const arm = Math.max(reach(L(21) + .5, 2.4), reach(L(22) + .1, 1.0), reach(L(22) + 1.2, 1.0));
+  const knock = 26 * Math.sin(PI * prog(t, PUSH, PUSH + .5));                                          // 被推得往后一晃
+  const pushedA = win(t, PUSH + .1, L(22) + .3, .2, .3) * (1 - zk);
+  text('被推开', kid - 20, ROOM4 + 64, { font: SANS, size: 42, weight: 900, align: 'center', color: '#ffcaa0', alpha: pushedA });
   const RING_T = [L(21) + 3.9, L(22) + .9, L(22) + 2.0];
   const fuse = E.io(prog(t, L(23), L(23) + .9)), pressed = sstep(L(24) + 3.0, L(24) + 4.4, t), rebound = sstep(L(26) + 4.4, L(26) + 4.9, t);
   const shellA = 1 - sstep(S5 - 1.6, S5 - .6, t);
   const need = zk;
-  fig(fx, fy, fs, born * (t < S5 + .3 ? 1 : 0), mixc('#d8c9b4', COOL, Math.max(sstep(L(23), L(23) + 1, t), toA)), { baby: fk, arm, dir: 1, tear: win(t, L(21) + .1, L(21) + 3.8, .3, .4), tearY: (t * .8) % 1, heart: 1 - zk, beat: .3 });
+  fig(fx - knock * (1 - toA), fy, fs, born * (t < S5 + .3 ? 1 : 0), mixc('#d8c9b4', COOL, Math.max(sstep(L(23), L(23) + 1, t), toA)),
+    { baby: fk, arm, dir: 1, tear: win(t, L(21) + .1, L(21) + 3.8, .3, .4), tearY: (t * .7) % 1, heart: 1 - need, beat: .3 });
   RING_T.forEach((rt, i) => { const k = E.io(prog(t, rt, rt + .6));
     if (k > 0) shell(fx, fy, fs * .8 * (1 + .15 * i * (1 - fuse)), born * shellA * (i ? 1 - fuse : 1), k, 1, 21 + i * 7); });
-  // 推近之后：胸口里那团想靠近的光，被压下去，又弹回来
+  // 推近之后：胸口里那团想靠近的光，被一块板压扁，又弹回来（光一直在胸口的位置，拉回来时变回那颗心）
   if (need > 0) {
     const shake = sstep(L(26) + .8, L(26) + 4.3, t), jit = (Math.sin(t * 61) + Math.sin(t * 37)) * 1.6 * shake * (1 - rebound);
-    const ry = lerp(1, .32, pressed * (1 - rebound)) * (1 + .25 * Math.sin(PI * prog(t, L(26) + 4.4, L(26) + 5.2)) * rebound);
+    const land = Math.exp(-Math.max(0, t - L(24) - 4.4) * 9) * (t > L(24) + 4.4 ? 1 : 0);                // 压到底时轻轻一弹
+    const ry = lerp(1, .32, pressed * (1 - rebound)) * (1 - .12 * land) * (1 + .25 * Math.sin(PI * prog(t, L(26) + 4.4, L(26) + 5.2)) * rebound);
     const bright = lerp(1, .38, pressed) * (1 - rebound) + rebound * (1 + .6 * Math.exp(-Math.max(0, t - L(26) - 4.5) * 2));
     const flick = pressed > .5 && rebound < 1 ? .75 + .25 * Math.sin(t * 13) * Math.sin(t * 7.3) : 1;
-    ctx.save(); ctx.translate(fx + jit, kcy + 4 * fs * (1 - ry)); ctx.scale(fs, fs * ry);
+    ctx.save(); ctx.translate(fx + jit, fcy + 4 * fs * (1 - ry)); ctx.scale(fs, fs * ry);
     glow(0, 0, 11, '255,180,110', need * bright * flick, 7); ctx.restore();
-    const slabY = lerp(kcy - 70 * fs, kcy - 15 * fs, pressed) - 90 * fs * E.in(prog(t, L(26) + 4.4, L(26) + 4.9));
-    const slabA = need * sstep(L(24) + 2.7, L(24) + 3.0, t) * (1 - rebound);
-    if (slabA > 0) { ctx.save(); ctx.globalAlpha = slabA; ctx.translate(fx + jit * 1.5, slabY); ctx.rotate(jit * .004); ctx.scale(fs, fs); ctx.fillStyle = '#20283a'; ctx.strokeStyle = ICE; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.roundRect(-34, -6, 68, 12, 3); ctx.fill(); ctx.stroke(); ctx.restore(); }
+    const fly = E.in(prog(t, L(26) + 4.4, L(26) + 4.9));
+    const slabY = lerp(fcy - 28 * fs, fcy - 8 * fs + 2 * fs * land, pressed) - 120 * fs * fly;
+    const slabA = need * sstep(L(24) + 2.7, L(24) + 3.0, t) * (1 - sstep(L(26) + 4.7, L(26) + 5.1, t));
+    if (slabA > 0) { ctx.save(); ctx.globalAlpha = slabA; ctx.translate(fx + jit * 1.5, slabY); ctx.rotate(jit * .004 + .5 * fly); ctx.scale(fs, fs); ctx.fillStyle = '#20283a'; ctx.strokeStyle = ICE; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.roundRect(-30, -5, 60, 10, 3); ctx.fill(); ctx.stroke(); ctx.restore(); }
     if (rebound > 0) for (let i = 0; i < 18; i++) { const r = mulberry(600 + i), p = prog(t, L(26) + 4.5, L(26) + 5.8 + r()), ang = r() * TAU;
-      if (p > 0 && p < 1) glow(fx + Math.cos(ang) * 60 * fs * E.out(p), kcy + Math.sin(ang) * 60 * fs * E.out(p), 1.4, '255,200,140', need * (1 - p), 4); }
+      if (p > 0 && p < 1) glow(fx + Math.cos(ang) * 60 * fs * E.out(p), fcy + Math.sin(ang) * 60 * fs * E.out(p), 1.4, '255,200,140', need * (1 - p), 4); }
   }
   ctx.restore();
   // 屏幕上的字（不跟着镜头缩放）
   const bigA = sstep(L(23) + .2, L(23) + .7, t) * (1 - sstep(L(24) - .3, L(24) + .2, t));
   typeText('把需要藏起来，', 540, 520, { ...big, size: 64, weight: 900, color: CREAM }, prog(t, L(23) + .1, L(23) + .8), bigA);
   typeText('就不会被推开', 540, 630, { ...big, size: 86, weight: 900, color: ICE, glow: `rgba(${ICE_RGB},.5)`, glowBlur: 28 }, prog(t, L(23) + 1.0, L(23) + 1.8), bigA);
-  text('想靠近', 880, 900, { font: SERIF, size: 54, weight: 900, align: 'center', color: GOLD, alpha: zk * sstep(L(24) + 2.0, L(24) + 2.4, t) * (1 - sstep(L(24) + 3.4, L(24) + 3.9, t)), glow: `rgba(${O_RGB},.5)`, blur: 18 });
-  pill('去激活', 540, 470, zk * sstep(L(24) + .6, L(24) + 1.1, t) * (1 - sstep(L(25), L(25) + .4, t)), { color: ICE, stroke: `rgba(${ICE_RGB},.6)`, size: 34 });
-  text('它还在', 540, 470, { font: SERIF, size: 58, weight: 900, align: 'center', color: GOLD, alpha: zk * win(t, L(25) + .5, L(26) + .3, .3, .3), glow: `rgba(${O_RGB},.5)`, blur: 18 });
-  // 一累、一分心：一圈数字和杂事绕着转
+  const deact = zk * sstep(L(24) + .6, L(24) + 1.1, t) * (1 - sstep(L(25) - .2, L(25) + .3, t));
+  typeText('去激活', 540, 440, { ...big, size: 80, weight: 900, color: ICE, glow: `rgba(${ICE_RGB},.55)`, glowBlur: 28 }, prog(t, L(24) + .6, L(24) + 1.3), deact);
+  text('想靠近', 880, 880, { font: SERIF, size: 56, weight: 900, align: 'center', color: GOLD, alpha: zk * sstep(L(24) + 2.0, L(24) + 2.4, t) * (1 - sstep(L(24) + 3.4, L(24) + 3.9, t)), glow: `rgba(${O_RGB},.5)`, blur: 18 });
+  text('压下去', 880, 880, { font: SERIF, size: 56, weight: 900, align: 'center', color: ICE, alpha: zk * sstep(L(24) + 3.9, L(24) + 4.3, t) * (1 - sstep(L(25) - .2, L(25) + .2, t)), glow: `rgba(${ICE_RGB},.5)`, blur: 18 });
+  text('它还在', 540, 440, { font: SERIF, size: 64, weight: 900, align: 'center', color: GOLD, alpha: zk * win(t, L(25) + .5, L(26) + .3, .3, .3), glow: `rgba(${O_RGB},.5)`, blur: 18 });
+  // 一分心：一串 7 位数字绕着转（实验里要一边记数字）
   const load = zk * win(t, L(26) + .4, L(26) + 4.6, .5, .3);
   if (load > 0) ['7', '3', '9', '1', '4', '8', '2'].forEach((d, i) => {
-    const k = sstep(L(26) + .4 + i * .22, L(26) + .7 + i * .22, t), ang = i / 7 * TAU + t * .9, R = 330 + 30 * Math.sin(t * 2 + i);
-    text(d, 540 + Math.cos(ang) * R, 880 + Math.sin(ang) * R * .9, { font: LAT, size: 64, weight: 600, align: 'center', color: CREAM, alpha: load * k * .75 });
+    const k = sstep(L(26) + .4 + i * .22, L(26) + .7 + i * .22, t), ang = i / 7 * TAU + t * .9, R = 360 + 30 * Math.sin(t * 2 + i);
+    text(d, 540 + Math.cos(ang) * R * .95, 890 + Math.sin(ang) * R * .9, { font: SERIF, size: 64, weight: 700, align: 'center', color: CREAM, alpha: load * k * .75 });
   });
-  text('一分心', 540, 470, { font: SERIF, size: 54, weight: 900, align: 'center', color: CREAM, alpha: load });
-  text('（实验里：一边记一串 7 位数）', 540, 1290, { font: SANS, size: 26, weight: 500, align: 'center', color: DIM, alpha: load });
+  text('一分心', 540, 440, { font: SERIF, size: 64, weight: 900, align: 'center', color: CREAM, alpha: load });
+  text('实验里：一边记一串 7 位数', 540, 1260, { font: SANS, size: 34, weight: 500, align: 'center', color: CREAM, alpha: load * .8 });
   const back = zk * sstep(L(26) + 4.6, L(26) + 5.0, t);
   const bs = pop(t, L(26) + 4.6) || 1;
-  ctx.save(); ctx.translate(540, 470); ctx.scale(bs, bs);
-  text('反弹回来', 0, 0, { font: SERIF, size: 76, weight: 900, align: 'center', color: GOLD, alpha: back, glow: `rgba(${O_RGB},.6)`, blur: 26 }); ctx.restore();
+  ctx.save(); ctx.translate(540, 440); ctx.scale(bs, bs);
+  text('反弹回来', 0, 0, { font: SERIF, size: 84, weight: 900, align: 'center', color: GOLD, alpha: back, glow: `rgba(${O_RGB},.6)`, blur: 26 }); ctx.restore();
 }
 
 // ======================================================================== ⑤ 怎么办（S5 – 结束）：开头那两个人回来了
@@ -799,7 +821,7 @@ function sceneHow(t) {
   const A = sstep(S5 - .5, S5 + .6, t), FS = F5.s, FY = F5.floor - 30 * FS, TY = F5.floor - 80 * FS, CY = chestY(FY, FS);
   floor(F5.floor, 80, 1000, A);
   // 回避型（右）和爱着他的人（左）
-  const ax = track([[0, 700], [L(28) + .1, 700], [L(28) + .6, 760, E.out], [L(32) + .2, 760], [L(32) + .6, 800, E.out], [L(32) + 1.0, 800], [L(32) + 1.4, 840, E.out], [L(35) + 1.5, 840], [L(35) + 4.2, 600]])(t);
+  const ax = track([[0, 700], [L(28) + .1, 700], [L(28) + .6, 760, E.out], [L(32) + .2, 760], [L(32) + .6, 800, E.out], [L(32) + 1.0, 800], [L(32) + 1.4, 840, E.out], [L(33) + .9, 840], [L(33) + 1.5, 815, E.out], [L(35) + 1.5, 815], [L(35) + 4.2, 600]])(t);
   const px = track([[0, 300], [L(32) + .05, 300], [L(32) + .45, 380, E.out], [L(32) + .95, 380], [L(32) + 1.35, 440, E.out], [L(33) + .1, 440], [L(33) + .7, 400]])(t);
   const warmUp = E.io(prog(t, L(35) + .5, L(35) + 4.5));
   const acol = mixc(COOL, WARMC, warmUp);
@@ -810,35 +832,36 @@ function sceneHow(t) {
   const sag = lerp(lerp(40, 4, taut), 70, sstep(L(33) + .2, L(33) + 1.2, t));
   thread(px + 30 * FS, TY, ax - 30 * FS, TY, A * pIn * (1 - vanish * 1.6), sstep(L(33) + .2, L(33) + 1.4, t) > .5 ? W_RGB : '200,210,230', sag, 2.5 + 1.5 * sstep(L(35), L(35) + 3, t));
   fig(px, FY, FS, A * pIn, WARMC, { heart: .5 + .5 * win(t, L(31), L(34), .3, .5), beat: 0 });
-  const msgK = E.io(prog(t, L(29) + .2, L(29) + 1.1));                                                  // 胸口的光浮上去，变成一条消息
-  fig(ax, FY, FS, t >= S5 + .3 ? 1 : 0, acol, { gone: vanish, heart: 1 - msgK + sstep(L(30), L(30) + .6, t) + warmUp, beat: .2 + .3 * warmUp, sq: 1 - 1.9 * Math.sin(PI * prog(t, L(33) + .9, L(33) + 1.5)) * .5 });
+  const rise = E.io(prog(t, L(29) + .1, L(29) + .7)), msgK = E.io(prog(t, L(29) + .6, L(29) + 1.4));  // 胸口的光浮上去，再展开成一条消息
+  fig(ax, FY, FS, t >= S5 + .3 ? 1 : 0, acol, { gone: vanish, heart: 1 - rise + sstep(L(30), L(30) + .6, t) + warmUp, beat: .2 + .3 * warmUp + .8 * Math.sin(PI * prog(t, L(33) + .9, L(33) + 1.6)) });
+  if (rise > 0 && msgK < 1) glow(lerp(ax, ax - 70, rise), lerp(CY, 760, rise), 6, '255,180,110', A * (1 - msgK), 6);
   dust(ax, FY, FS, vanish * 2, ICE, A);
   // 标签：“回避型”挂在头顶 → L34 掉下来，散成光
   const tagIn = sstep(L(27), L(27) + .5, t), drop = prog(t, L(34) + .6, L(34) + 2.2);
   if (tagIn > 0 && drop < 1) {
     const fall = E.in(drop), ty = 820 + 280 * fall, rot = .9 * fall * fall;
     if (drop <= 0) seg(ax, 842, ax, FY - 106 * FS, `rgba(${ICE_RGB},.6)`, 2, tagIn);
-    pill('回避型', ax + 40 * fall, ty, tagIn * (1 - sstep(.6, 1, drop)), { color: ICE, stroke: `rgba(${ICE_RGB},.6)`, rot });
+    pill('回避型', ax + 40 * fall, ty, tagIn * (1 - sstep(.6, 1, drop)), { color: ICE, stroke: `rgba(${ICE_RGB},.6)`, rot, size: 36 });
   }
-  if (drop > .5 && drop < 1.6) dust(ax + 60, 1000, 1.3, (drop - .5) * 1.2, ICE, A, 9);
+  const dk = (t - (L(34) + .6)) / 1.6; if (dk > .5 && dk < 1.6) dust(ax + 60, 1000, 1.3, (dk - .5) * 1.2, ICE, A, 9);
   const youA = win(t, L(31), L(34), .4, .4);
-  pill('爱着回避型的你', px, 820, youA, { color: GOLD, stroke: `rgba(${O_RGB},.6)`, size: 28 });
+  pill('爱着回避型的你', px + 30, 810, youA, { color: GOLD, stroke: `rgba(${O_RGB},.6)`, size: 34 });
   // 消息：从回避型的胸口浮上去，沿着线飞到对方那儿
   const fly = E.io(prog(t, L(29) + 2.0, L(29) + 3.1)), mA = A * msgK * (1 - sstep(L(30) - .1, L(30) + .5, t));
   if (mA > 0) {
-    const bx = lerp(Math.min(ax, 760), px + 120, fly), by = lerp(lerp(CY, 700, msgK), 720, fly) - 40 * Math.sin(PI * fly), sc = lerp(.3, 1, msgK) * lerp(1, .85, fly);
-    ctx.save(); ctx.translate(bx, by); ctx.scale(sc, sc); say('我需要一点时间，晚上找你。', 0, 0, mA, ICE, 30); ctx.restore();
+    const bx = lerp(lerp(ax - 70, 560, msgK), 330, fly), by = lerp(lerp(760, 680, msgK), 720, fly) - 40 * Math.sin(PI * fly), sc = lerp(.15, 1, msgK);
+    ctx.save(); ctx.translate(bx, by); ctx.scale(sc, sc); say('我需要一点时间，晚上找你。', 0, 0, mA, ICE, 40); ctx.restore();
   }
   if (t > L(29) + 3.0) for (let i = 0; i < 10; i++) { const r = mulberry(1500 + i), p = prog(t, L(29) + 3.0, L(29) + 4.2 + r()); if (p > 0 && p < 1) glow(px + (r() - .5) * 160, CY - p * 200, 2 + 2 * r(), O_RGB, A * (1 - p), 3); }
   // 一个时间点（月亮）+ 一条回来的路
   const moon = A * sstep(L(30) + .2, L(30) + .7, t) * (1 - sstep(L(31) - .2, L(31) + .3, t));
-  if (moon > 0) { ctx.save(); ctx.globalAlpha = moon; ctx.fillStyle = GOLD; ctx.shadowColor = `rgba(${O_RGB},.8)`; ctx.shadowBlur = 20; ctx.beginPath(); ctx.arc(560, 640, 40, 0, TAU); ctx.fill();
-    ctx.globalCompositeOperation = 'destination-out'; ctx.beginPath(); ctx.arc(581, 628, 35, 0, TAU); ctx.fill(); ctx.restore();
-    text('晚上', 560, 720, { font: SANS, size: 28, weight: 700, align: 'center', color: GOLD, alpha: moon }); }
+  if (moon > 0) { ctx.save(); ctx.globalAlpha = moon; ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.arc(581, 628, 35, 0, TAU); ctx.clip('evenodd');
+    ctx.fillStyle = GOLD; ctx.shadowColor = `rgba(${O_RGB},.8)`; ctx.shadowBlur = 20; ctx.beginPath(); ctx.arc(560, 640, 40, 0, TAU); ctx.fill(); ctx.restore();
+    text('晚上', 560, 724, { font: SANS, size: 38, weight: 700, align: 'center', color: GOLD, alpha: moon }); }
   const path = E.io(prog(t, L(30) + 1.6, L(30) + 3.0)), pathA = A * (1 - sstep(L(31) - .2, L(31) + .4, t));
   if (path > 0 && pathA > 0) for (let i = 0; i < 16; i++) { const k = i / 15; if (k > path) break; const x = lerp(ax - 20, px + 20, k);
     glow(x, F5.floor + 24, 3.6, W_RGB, pathA * (.6 + .4 * Math.sin(t * 4 - i * .6)), 4); }
-  text('回来的路', (ax + px) / 2, F5.floor + 80, { font: SANS, size: 28, weight: 700, align: 'center', color: GOLD, alpha: pathA * sstep(L(30) + 2.6, L(30) + 3.0, t) });
+  text('回来的路', (ax + px) / 2, F5.floor + 84, { font: SANS, size: 38, weight: 700, align: 'center', color: GOLD, alpha: pathA * sstep(L(30) + 2.6, L(30) + 3.0, t) });
   // 大字
   const gap = A * sstep(L(33) + .3, L(33) + .8, t) * (1 - sstep(L(34) - .2, L(34) + .3, t));
   typeText('给空间 ≠ 被冷落', 540, 620, { ...big, size: 76, weight: 900, color: GOLD, glow: `rgba(${O_RGB},.45)`, glowBlur: 24 }, prog(t, L(33) + .2, L(33) + 1.0), gap);
@@ -850,8 +873,8 @@ function sceneHow(t) {
   typeText('不是不会爱，', 540, 540, { ...big, size: 64, weight: 900, color: CREAM }, prog(t, L(36), L(36) + .8), fin);
   typeText('只是爱得很小心', 540, 660, { ...big, size: 84, weight: 900, color: GOLD, glow: `rgba(${O_RGB},.55)`, glowBlur: 34 }, prog(t, L(36) + 1.2, L(36) + 2.4), fin);
   const Q = sstep(L(37) - .1, L(37) + .4, t);
-  typeText('评论区说说：', 540, 1240, { size: 34, weight: 700, font: SERIF, align: 'center', color: DIM, spread: 4 }, prog(t, L(37), L(37) + .5), Q);
-  typeText('你是回避型，还是正在爱着一个回避型？', 540, 1310, { size: 40, weight: 900, font: SERIF, align: 'center', color: GOLD, spread: 5, glow: `rgba(${O_RGB},.4)`, glowBlur: 16 }, prog(t, L(37) + .4, L(37) + 1.6), Q);
+  typeText('评论区说说：', 540, 1230, { size: 42, weight: 700, font: SERIF, align: 'center', color: CREAM, spread: 4 }, prog(t, L(37), L(37) + .5), Q);
+  typeText('你是回避型，还是正在爱着一个回避型？', 540, 1310, { size: 48, weight: 900, font: SERIF, align: 'center', color: GOLD, spread: 5, glow: `rgba(${O_RGB},.4)`, glowBlur: 16 }, prog(t, L(37) + .4, L(37) + 1.6), Q);
 }
 
 // ======================================================================== 世界层
@@ -862,9 +885,12 @@ function WORLD(t) {
   sceneOpen(t); sceneTitle(t); sceneRulers(t); sceneShell(t); sceneOrigin(t); sceneHow(t);
 }
 function SAMPLES(T) {
-  const fast = [[L(4), L(4) + 1.4], [S2 - .2, S2 + 1.2], [L(9), L(9) + 1.6], [S3 - .4, S3 + 1.3], [L(12) - .4, L(12) + 1.1], [L(15) - .2, L(15) + 1.3], [L(19), L(19) + 1.9],
-    [L(24) - .1, L(24) + 1.1], [L(26) + 4.3, L(26) + 5.2], [L(26) + 5.4, S5 + 1], [L(34) + .5, L(34) + 2.3]];
-  return fast.some(([a, b]) => T > a && T < b) ? 4 : 3;
+  const many = [[L(4) + .3, L(4) + 1.25]];                                                               // 钻进门缝：放大得太快，要多采样才不出重影
+  const more = [[L(2) + 2.4, L(2) + 3.1], [L(12) + 1.1, L(12) + 2.5], [L(12) + 2.9, L(12) + 4.2], [S3 - 1.5, S3 + .3], [L(21) + 2.3, L(21) + 3.3]];
+  const fast = [[L(4), L(4) + 1.4], [S2 - .2, S2 + 1.2], [L(9), L(9) + 1.6], [L(12) - .4, L(12) + 1.1], [L(15) - .2, L(15) + 1.3], [L(19), L(19) + 1.9],
+    [L(24) - .1, L(24) + 1.1], [L(26) + 4.3, L(26) + 5.2], [L(26) + 5.4, S5 + 1], [L(29), L(29) + 3.2], [L(34) + .5, L(34) + 2.3]];
+  const in_ = r => r.some(([a, b]) => T > a && T < b);
+  return in_(many) ? 14 : in_(more) ? 8 : in_(fast) ? 4 : 3;
 }
 function BLOOM_K(T) { return .4 + .15 * win(T, L(4) + .6, L(4) + 2.4, .3, .8) + .1 * win(T, L(18), S4, .4, .5) + .14 * win(T, L(26) + 4.4, L(26) + 6, .2, .8) + .16 * win(T, L(35), TOTAL, 1, 1); }
 function OVER(T) {
@@ -873,7 +899,7 @@ function OVER(T) {
   stamp('1977', 'Sroufe & Waters', L(12) + .4, L(15) - .1, T);
   stamp('1992', 'Dozier & Kobak', L(16), L(18) - .2, T);
   stamp('1978', 'Ainsworth 等', L(20), L(23) - .2, T);
-  stamp('2004', 'Mikulincer, Dolev & Shaver', L(26), L(26) + 6.0, T);
+  stamp('2004', 'Mikulincer, Dolev & Shaver', L(26), L(26) + 4.4, T);
 }
 function MASTER(T) { return 1; }
 function INIT() {
