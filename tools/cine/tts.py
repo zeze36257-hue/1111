@@ -58,24 +58,35 @@ def spoken(path):                                  # 去掉首尾静音后的时
     return int(h) * 3600 + int(m) * 60 + float(sec)
 
 
+# 按“文字 + 音色设置”缓存：改了时间、插了句子，原来的录音只要还放得下就接着用
+pool = {}
+for e_ in idx.values():
+    p_ = os.path.join(out_dir, e_.get('file', ''))
+    if e_.get('tkey') and os.path.exists(p_): pool.setdefault(e_['tkey'], (open(p_, 'rb').read(), e_['dur'], e_['speed']))
+base = v.get('speed', 1.0)
 for i, (a, b, text) in enumerate(rows):
     room = (rows[i + 1][0] if i + 1 < len(rows) else total) - a - .15        # 到下一句开始之前说完
     say = text.replace('「', '').replace('」', '')
     for k_, r_ in v.get('say', {}).items(): say = say.replace(k_, r_)        # 读法，例如电话号码 120 读“幺二零”
     key = hashlib.sha1(json.dumps([say, v, round(room, 2)], ensure_ascii=False).encode()).hexdigest()[:12]
+    tkey = hashlib.sha1(json.dumps([say, v], ensure_ascii=False).encode()).hexdigest()[:12]
     name = f'{i:02d}.mp3'; path = os.path.join(out_dir, name)
     if idx.get(name, {}).get('key') == key and os.path.exists(path): continue
     prev = idx.get(f'{i - 1:02d}.mp3')
     lead = min(1.0, max(0, a - (prev['start'] + prev['dur'] + .3))) if prev else 0   # 上一句说完后空着的时间，可以提前一点开口
-    speed = v.get('speed', 1.0)
-    open(path, 'wb').write(synth(say, speed)); d = spoken(path)
-    if d > room + lead:                                                    # 还是太长：按比例加快（最多 1.3 倍）再合成一次
+    hit = pool.get(tkey)
+    if hit and hit[1] <= room + lead and (hit[2] == base or hit[1] * hit[2] / base > room + lead):
+        open(path, 'wb').write(hit[0]); d, speed = hit[1], hit[2]           # 缓存里有，而且放得下
+    else:
+        speed = base
+        open(path, 'wb').write(synth(say, speed)); d = spoken(path)
+    if d > room + lead and speed == base:                                  # 还是太长：按比例加快（最多 1.3 倍）再合成一次
         speed = min(1.3, speed * d / (room + lead) * 1.03)
         open(path, 'wb').write(synth(say, speed)); d = spoken(path)
     start = a - min(lead, max(0, d - room))
     if prev: start = max(start, prev['start'] + prev['dur'] + .15)        # 上一句超时了：等它说完再开口
     start = round(start, 2)
-    idx[name] = {'key': key, 'start': start, 'text': text, 'speed': round(speed, 3), 'dur': round(d, 2), 'room': round(room, 2)}
+    idx[name] = {'key': key, 'tkey': tkey, 'file': name, 'start': start, 'text': text, 'speed': round(speed, 3), 'dur': round(d, 2), 'room': round(room, 2)}
     json.dump(idx, open(idx_path, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
     print(f'{name}  {start:6.2f}s  {d:4.2f}/{room:4.2f}s  x{speed:.2f}  {text}')
 for name in list(idx):                                                     # 删掉多出来的旧句子
