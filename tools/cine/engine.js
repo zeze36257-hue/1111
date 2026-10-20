@@ -140,17 +140,18 @@ function narration(T) {
     const g = ctx.createLinearGradient(0, 1250, 0, 1620); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(.5, `rgba(0,0,0,${.42 * shade})`); g.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = g; ctx.fillRect(0, 1250, W, 370);
   }
-  for (const [a, b, s] of LINES) {
-    if (T < a || T > b + .7) continue;
+  LINES.forEach(([a, b, s], k) => {
+    const next = LINES[k + 1] ? LINES[k + 1][0] : Infinity, fe = Math.max(b + .15, Math.min(b + .6, next - .05));   // 下一句开始之前淡出完，两句不叠在一起
+    if (T < a || T > fe + .1) return;
     if (!WRAP_CACHE.has(s)) WRAP_CACHE.set(s, wrapRuns(runs(s), NARR, NARR.max));
     const lines = WRAP_CACHE.get(s);
-    const fade = 1 - sstep(b, b + .6, T), drift = -16 * E.in(prog(T, b, b + .7));
+    const fade = 1 - sstep(b, fe, T), drift = -16 * E.in(prog(T, b, fe + .1));
     const n = lines.reduce((k, l) => k + l.length, 0), dur = Math.min(1.2, .3 + n * .03);
     lines.forEach((ln, i) => {
       const t0 = a + i * .22;
       typeRun(ln, NARR.x, NARR.y + (i - (lines.length - 1)) * NARR.lh + drift, { ...NARR, glow: 'rgba(0,0,0,.9)', glowBlur: 14 }, prog(T, t0, t0 + dur), fade);
     });
-  }
+  });
 }
 
 // ======================================================================== 右上角的年份 / 出处
