@@ -269,7 +269,8 @@ function render(T) {
 //   门缝里的光 → 题目；题目下面那一笔 → 尺子的横轴；尺子上的点 → 四个人 → 走到镜头前的那一个；
 //   大人缩回一岁的宝宝；心电图那条线一直走，宝宝在线上长回大人；倒带回小时候，看壳一层层长出来；
 //   被压下去的那团光反弹起来，回到胸口，变成一条消息。
-// 颜色：回避型 = 冷蓝，爱着他的人 = 暖橙；最后冷蓝慢慢变暖。
+// 角色都是黑猫（和片头、片尾那只同一个造型）：回避型 = 冷蓝轮廓和眼睛，爱着他的那只 = 暖橙；最后冷蓝慢慢变暖。
+// 没有片头（meta.json "intro": false）：第一帧就是封面“越喜欢，越想躲”。
 // 时间：画面里的时间都写成 L(i) + 秒数（第 i 句开始之后），时间轴由 layout.py 按配音的真实长度排出来。
 // ======================================================================== 时间轴（layout.py 生成，别手改）
 const TOTAL = 153.6;
@@ -395,28 +396,70 @@ function thread(x1, y1, x2, y2, a, col = W_RGB, sag = 30, w = 3) {              
 function pop(t, t0) { const k = prog(t, t0, t0 + .45); return k <= 0 ? 0 : 1 + .18 * Math.sin(PI * Math.min(1, k * 1.25)) * (1 - k); }
 function floor(y, x0, x1, a) { seg(x0, y, x1, y, 'rgba(236,230,218,.28)', 2, a); }
 
-// 一个人。o.baby：0 大人 → 1 一岁宝宝的比例；o.arm：伸手（o.dir 朝向）；o.heart：胸口的光（o.beat 跳一下时变大）；
-// o.lift / o.reach：手抬到多高、伸多远；o.gone：从脚往上消失；o.sq：横向压扁（转身）。胸口在 (x, y + s * (top + 30))。
-function figDims(k) { return { hr: lerp(22, 29, k), hy: lerp(-84, -60, k), top: lerp(-54, -30, k), hw: lerp(40, 33, k), bot: 30 }; }
+// 一只坐着的黑猫（和片头、片尾那只同一个造型，缩小到 1/4）。局部坐标：脚底在 y = 30，耳朵尖在 y ≈ -106。
+// o.baby：0 大猫 → 1 小奶猫（头大身小）；o.arm：伸出前爪（o.dir 朝向，o.lift / o.reach：抬多高、伸多远）；
+// o.heart：胸口的光（o.beat 跳一下时变大）；o.gone：从脚往上消失；o.sq：横向压扁；o.tear：眼泪。
+// 轮廓光和眼睛用这只猫自己的颜色（回避型冷蓝，爱着他的暖橙），身体是黑的。胸口在 (x, y + s * (top + 30))。
+const CS = .251, CAT_PATH = (() => {                                                                  // 片头那只猫的形状（原尺寸）
+  const head = new Path2D(); head.ellipse(0, -150, 108, 94, 0, 0, TAU);
+  const earL = new Path2D(); earL.moveTo(-100, -190); earL.lineTo(-84, -292); earL.lineTo(-30, -232); earL.closePath();
+  const earR = new Path2D(); earR.moveTo(100, -190); earR.lineTo(84, -292); earR.lineTo(30, -232); earR.closePath();
+  const body = new Path2D(); body.moveTo(-62, -80); body.bezierCurveTo(-120, -20, -168, 110, -150, 210);
+  body.quadraticCurveTo(-140, 248, -96, 250); body.lineTo(96, 250); body.quadraticCurveTo(140, 248, 150, 210);
+  body.bezierCurveTo(168, 110, 120, -20, 62, -80); body.closePath();
+  const tail = new Path2D(); tail.moveTo(120, 236); tail.bezierCurveTo(220, 250, 262, 170, 238, 96); tail.quadraticCurveTo(226, 62, 200, 70);
+  return { head, earL, earR, body, tail };
+})();
+function catGeo(k) {                                                                                  // 小奶猫：身体缩小、头放大
+  const bs = lerp(1, .74, k), hs = lerp(1, 1.14, k), bodyTop = 250 - 330 * bs, hc = bodyTop - 70 * hs;
+  const f = yb => (yb - 250) * CS + 30;
+  return { bs, hs, hc, hy: f(hc), hr: 94 * hs * CS, top: f(bodyTop) + 6, hw: 150 * bs * CS, bot: 30, earTop: f(hc - 142 * hs) };
+}
+function figDims(k) { const g = catGeo(k); return { hr: g.hr, hy: g.hy, top: g.top, hw: g.hw, bot: g.bot }; }
 function chestY(y, s, k = 0) { return y + s * (figDims(k).top + 30); }
 function fig(x, y, s, a, col, o = {}) {
   if (a <= 0 || s <= 0) return;
-  const { hr, hy, top, hw, bot } = figDims(o.baby || 0), gone = o.gone || 0, lw = 3 / Math.max(.5, s);
+  const k = o.baby || 0, g = catGeo(k), gone = o.gone || 0;
   ctx.save(); ctx.globalAlpha *= a; ctx.translate(x, y); ctx.scale(s * (o.sq ?? 1), s);
-  if (gone > 0) { ctx.beginPath(); ctx.rect(-300, -500, 600, 500 + lerp(bot + 4, hy - hr - 4, gone)); ctx.clip(); }
-  ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.fillStyle = 'rgba(16,17,23,.96)'; ctx.shadowColor = col; ctx.shadowBlur = 8;
-  if (o.arm > 0) {                                                                                       // 伸出去的手
-    const d = o.dir || 1, ax = d * (hw - 8), ay = top + 20, ex = ax + d * (o.reach || 50) * o.arm, ey = ay + lerp(34, o.lift ?? -22, o.arm);
-    ctx.save(); ctx.lineCap = 'round'; ctx.lineWidth = 9 / Math.max(.5, s); ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ex, ey); ctx.stroke(); ctx.restore();
+  if (gone > 0) { ctx.beginPath(); ctx.rect(-300, -500, 600, 500 + lerp(g.bot + 4, g.earTop - 4, gone)); ctx.clip(); }
+  ctx.save(); ctx.translate(0, 30 - 250 * CS); ctx.scale(CS, CS);                                      // 进入片头那只猫的坐标
+  const lw = 3 / (Math.max(.5, s) * CS);
+  const bodyT = () => { ctx.translate(0, 250); ctx.scale(g.bs, g.bs); ctx.translate(0, -250); };
+  const headT = () => { ctx.translate(0, g.hc); ctx.scale(g.hs, g.hs); ctx.translate(0, 150); };     // 片头里头的中心在 y = -150
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.shadowColor = col; ctx.shadowBlur = 8 / CS;
+  ctx.save(); bodyT(); ctx.strokeStyle = col; ctx.lineWidth = lw * 2 + 30; ctx.stroke(CAT_PATH.tail); ctx.shadowBlur = 0;      // 尾巴：轮廓光 + 黑色
+  ctx.strokeStyle = '#07080b'; ctx.lineWidth = 30; ctx.stroke(CAT_PATH.tail); ctx.restore();
+  ctx.strokeStyle = col; ctx.lineWidth = lw;
+  ctx.save(); bodyT(); ctx.stroke(CAT_PATH.body); ctx.restore();
+  ctx.save(); headT(); ctx.stroke(CAT_PATH.head); ctx.stroke(CAT_PATH.earL); ctx.stroke(CAT_PATH.earR); ctx.restore();
+  ctx.shadowBlur = 0; ctx.fillStyle = '#07080b';
+  ctx.save(); bodyT(); ctx.fill(CAT_PATH.body); ctx.restore();
+  ctx.save(); headT(); ctx.fill(CAT_PATH.head); ctx.fill(CAT_PATH.earL); ctx.fill(CAT_PATH.earR);
+  ctx.globalAlpha *= .3; ctx.strokeStyle = CREAM; ctx.lineWidth = 1.2 / (Math.max(.5, s) * CS);       // 胡须
+  for (const kx of [-1, 1]) for (const dy of [-6, 6]) { ctx.beginPath(); ctx.moveTo(kx * 50, -118 + dy * .5); ctx.lineTo(kx * 140, -126 + dy * 2); ctx.stroke(); }
+  ctx.globalAlpha /= .3;
+  for (const ex of [-42, 42]) {                                                                       // 眼睛：这只猫自己的颜色，竖瞳
+    ctx.save(); ctx.translate(ex, -152); ctx.shadowColor = col; ctx.shadowBlur = 30;
+    ctx.beginPath(); ctx.moveTo(-24, 0); ctx.quadraticCurveTo(0, -20, 24, 0); ctx.quadraticCurveTo(0, 20, -24, 0); ctx.closePath();
+    ctx.fillStyle = o.eye || col; ctx.fill(); ctx.shadowBlur = 0; ctx.clip();
+    ctx.fillStyle = '#050505'; ctx.beginPath(); ctx.ellipse(0, 0, 4.5, 15, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.beginPath(); ctx.arc(-7, -5, 3, 0, TAU); ctx.fill(); ctx.restore();
   }
-  ctx.beginPath(); ctx.arc(0, hy, hr, 0, TAU); ctx.fill(); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(-hw, bot); ctx.lineTo(-hw, top + 32); ctx.quadraticCurveTo(-hw, top + 2, -hw + 28, top); ctx.lineTo(hw - 28, top);
-  ctx.quadraticCurveTo(hw, top + 2, hw, top + 32); ctx.lineTo(hw, bot); ctx.closePath(); ctx.fill(); ctx.stroke();
-  if (o.tear > 0) { ctx.save(); ctx.globalAlpha *= o.tear * (1 - sstep(.75, 1, o.tearY)); ctx.fillStyle = ICE; ctx.shadowColor = ICE; ctx.shadowBlur = 8; ctx.translate(hr * .42, hy + 2 + 10 * o.tearY); ctx.scale(1.7, 1.7);
+  ctx.restore();
+  ctx.restore();
+  // 回到猫的局部坐标（脚底 y = 30）：前爪、眼泪
+  if (o.arm > .12) {                                                                                  // 爪子收回来时直接不画（不在身上留一条竖线）
+    const d = o.dir || 1, ax = d * (g.hw * .55), ay = g.top + 22, ex = ax + d * (o.reach || 50) * o.arm, ey = ay + lerp(34, o.lift ?? -22, o.arm);
+    ctx.save(); ctx.globalAlpha *= sstep(.12, .35, o.arm); ctx.lineCap = 'round'; ctx.shadowColor = col; ctx.shadowBlur = 8;
+    ctx.strokeStyle = col; ctx.lineWidth = 11 / Math.max(.5, s); ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ex, ey); ctx.stroke();
+    ctx.shadowBlur = 0; ctx.strokeStyle = '#07080b'; ctx.lineWidth = 6 / Math.max(.5, s); ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ex, ey); ctx.stroke(); ctx.restore();
+  }
+  if (o.tear > 0) { ctx.save(); ctx.globalAlpha *= o.tear * (1 - sstep(.75, 1, o.tearY)); ctx.fillStyle = ICE; ctx.shadowColor = ICE; ctx.shadowBlur = 8;
+    ctx.translate(-42 * CS * g.hs, g.hy + 6 + 10 * o.tearY); ctx.scale(1.5, 1.5);
     ctx.beginPath(); ctx.moveTo(0, -7); ctx.quadraticCurveTo(5.5, 2, 0, 4.5); ctx.quadraticCurveTo(-5.5, 2, 0, -7); ctx.fill(); ctx.restore(); }
   ctx.restore();
   if (o.heart > 0) {
-    const cy = y + s * (top + 30), r = s * (4 + 3 * (o.beat || 0));
+    const cy = y + s * (g.top + 30), r = s * (4 + 3 * (o.beat || 0));
     glow(x, cy, r, o.heartRgb || '255,170,110', a * o.heart, 5 + 3 * (o.beat || 0));
   }
 }
