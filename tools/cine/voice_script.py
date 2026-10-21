@@ -7,9 +7,9 @@ does not repeat, e.g. the climax quote). Times are shifted by the 1.8 s brand in
 """
 import json, os, re, sys
 
-INTRO = 1.8
 ep = os.path.abspath(sys.argv[1])
 meta = json.load(open(os.path.join(ep, 'meta.json'), encoding='utf-8'))
+INTRO = 1.8 if meta.get('intro', True) else 0.0                                  # "intro": false 时没有片头
 src = open(os.path.join(ep, 'scenes.js'), encoding='utf-8').read()
 
 
@@ -21,7 +21,7 @@ def block(name):
 rows = sorted([(float(a), float(b), t, '') for a, b, t in block('LINES')] + [(float(a), float(b), t, '（画面大字）') for a, b, t in block('BIGLINES')])
 fmt = lambda x: f'{int(x // 60):02d}:{x % 60:04.1f}'
 out = [f"黑猫不说话 · 心理学 No.{meta['no']}《{meta['title']}》配音稿",
-       f'时间是成片时间（开头 {INTRO} 秒片头之后开始），大约在这个时间段里说完这一句即可。', '']
+       (f'时间是成片时间（开头 {INTRO} 秒片头之后开始），大约在这个时间段里说完这一句即可。' if INTRO else '时间是成片时间（没有片头，第一帧就是正片），大约在这个时间段里说完这一句即可。'), '']
 for a, b, t, note in rows:
     out.append(f'{fmt(a + INTRO)} – {fmt(b + INTRO)}  {t.replace("「", "").replace("」", "")}{note}')
 open(os.path.join(ep, '配音稿.txt'), 'w', encoding='utf-8').write('\n'.join(out) + '\n')
