@@ -1,0 +1,5 @@
+{"no": 47, "title": "焦虑型依恋", "fullTitle": "焦虑型依恋：不是太黏人，只是太怕失去",
+ "next": "",
+ "intro": false,
+ "voice": {"id": "Chinese (Mandarin)_Gentleman", "model": "speech-2.8-hd"},
+ "music": {"src": "bgm.wav", "segments": [[0, 300]], "fadeOut": 1.0}}
