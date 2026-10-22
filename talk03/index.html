@@ -808,8 +808,8 @@ function sceneAlarm(t) {
       text(lab, mx, above ? TL.y - 66 : TL.y + 66, { font: SANS, size: 32, weight: 900, align: above ? 'left' : 'center', color: col, alpha: m });
     }
     const wrong = fa * sstep(L(14) + .4, L(14) + .8, t);
-    text('✗ 更容易看错', TL.x0, TL.y + 120, { font: SANS, size: 36, weight: 900, align: 'left', color: '#ff8f8f', alpha: wrong });
-    text('判断得太快', TL.x0, TL.y + 168, { font: SANS, size: 30, weight: 700, align: 'left', color: DIM, alpha: fa * sstep(L(14) + 1.4, L(14) + 1.8, t) });
+    text('✗ 更容易看错', 400, TL.y + 120, { font: SANS, size: 36, weight: 900, align: 'left', color: '#ff8f8f', alpha: wrong });
+    text('判断得太快', 400, TL.y + 168, { font: SANS, size: 30, weight: 700, align: 'left', color: DIM, alpha: fa * sstep(L(14) + 1.4, L(14) + 1.8, t) });
   }
   // 一直去翻对方的主页
   const sa = sstep(L(15) - .2, L(15) + .4, t) * (1 - sstep(L(17) - .1, L(17) + .4, t));
@@ -915,7 +915,7 @@ function sceneHow(t) {
   if (t > L(26) && t < L(27) + .5) for (let i = 0; i < 10; i++) {
     const r = mulberry(5100 + i), t0 = L(26) + .2 + i * .12, p = prog(t, t0, t0 + 1.4);
     if (p <= 0 || p >= 1) continue;
-    const bx = lerp(px - 30, ax + 40, p) + (r() - .5) * 220, by = 900 - 300 * r() - 90 * Math.sin(PI * p);
+    const bx = lerp(px - 30, ax + 40, p) + (r() - .5) * 220, by = 745 - 130 * r() - 50 * Math.sin(PI * p);
     text('我爱你', bx, by, { font: SANS, size: 32, weight: 700, align: 'center', color: P_COL, alpha: A * Math.sin(PI * p) * (1 - sstep(L(26) + 2.2, L(26) + 2.8, t)) });
   }
   const sure = E.io(prog(t, L(27) + .3, L(27) + .9)), sureFly = E.io(prog(t, L(27) + 1.6, L(27) + 2.4)), sA = A * sure * (1 - sstep(L(28) + 1.2, L(28) + 1.8, t));
