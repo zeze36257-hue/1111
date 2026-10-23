@@ -1,0 +1,5 @@
+{"no": 48, "title": "焦虑型配回避型", "fullTitle": "焦虑型配回避型：为什么越追，越跑",
+ "next": "",
+ "intro": false,
+ "voice": {"id": "Chinese (Mandarin)_Gentleman", "model": "speech-2.8-hd"},
+ "music": {"src": "bgm.wav", "segments": [[0, 300]], "fadeOut": 1.0}}
