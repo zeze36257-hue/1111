@@ -193,6 +193,15 @@ def synth(kind, o):
         n = int(.5 * SR); t = np.arange(n) / SR
         x = .7 * band(noise(n), 250, 2600) * np.exp(-t / .025) + .6 * np.sin(2 * np.pi * 95 * t) * np.exp(-t / .06)
         return pan(np.tanh(x * 1.5), o.get('pan', 0)) * g
+    if kind == 'rain':                                                     # 雨：沙沙的底噪 + 零星的雨滴；muffle：隔着窗户 / 门；fi / fo：淡入淡出
+        d = o.get('dur', 6); n = int(d * SR); t = np.arange(n) / SR
+        fade = np.clip(np.minimum(t / max(o.get('fi', 1.0), 1e-3), (d - t) / max(o.get('fo', 1.0), 1e-3)), 0, 1)
+        def ch():
+            x = band(noise(n), 1200, 8000) * .2 + band(noise(n), 250, 1200) * .1
+            drops = np.zeros(n); k = rng.integers(0, n, int(d * 35)); drops[k] = rng.uniform(.3, 1, len(k)) * rng.choice([-1, 1], len(k))
+            x += band(drops, 1800, 6000) * .9
+            return lp(x, 900) * 1.8 if o.get('muffle') else x
+        return np.stack([ch(), ch()], 1) * fade[:, None] * g
     if kind == 'bar':                                                      # 柱子升起：上滑的音
         d = o.get('dur', .9); n = int(d * SR); p = np.linspace(0, 1, n)
         x = .35 * sine_sweep(o.get('f0', 330), o.get('f1', 880), n) * np.sin(np.pi * p) ** .5 * (1 - p) ** .3

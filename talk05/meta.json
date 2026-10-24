@@ -1,0 +1,5 @@
+{"no": 49, "title": "恐惧型依恋", "fullTitle": "恐惧型依恋：越想要，越推开",
+ "next": "",
+ "intro": false,
+ "voice": {"id": "Chinese (Mandarin)_Gentleman", "model": "speech-2.8-hd", "speed": 0.92},
+ "music": {"src": "bgm.wav", "segments": [[0, 300]], "fadeOut": 1.0}}
