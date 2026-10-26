@@ -1,0 +1,615 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>电梯里遇到领导</title>
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>
+  :root { --bg: #000; }
+  html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; }
+  #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  canvas { height: 100vh; width: 56.25vh; max-width: 100vw; max-height: 177.78vw; background: #000; display: block; }
+  #hint { position: fixed; left: 0; right: 0; bottom: 16px; text-align: center; color: #888; font: 14px "Noto Sans SC", sans-serif; }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c" width="1080" height="1920"></canvas></div>
+<div id="hint">点击播放 / 暂停 · ← → 快退快进</div>
+<script>
+// 黑猫不说话 · 心理学 No.52《电梯里遇到领导》
+// 电影感引擎（第三季起）：连续镜头、形变转场、逐字浮现的字幕、动态模糊、泛光与胶片颗粒。
+// 每一帧仍是时间 T 的纯函数：实时预览与逐帧导出（?export=1）画出的是同一帧。
+'use strict';
+// ======================================================================== 基础
+const W = 1080, H = 1920, FPS = 30, SHUTTER = .5;                 // 180° 快门：每帧曝光半个帧间隔
+const EXPORT = /[?&]export=1/.test(location.search);
+const cv = document.getElementById('c'), OUT = cv.getContext('2d');
+const mk = (w, h) => Object.assign(document.createElement('canvas'), { width: w, height: h });
+const LAYER = mk(W, H), LCTX = LAYER.getContext('2d');          // 动态模糊：子帧先画在这里，再平均到 OUT
+const BLOOM = mk(W / 4, H / 4), BCTX = BLOOM.getContext('2d');   // 泛光：缩小、提亮部、模糊后叠回去
+let ctx = OUT;
+
+const PI = Math.PI, TAU = PI * 2;
+const clamp = (x, a = 0, b = 1) => x < a ? a : x > b ? b : x;
+const lerp = (a, b, t) => a + (b - a) * t;
+const prog = (t, a, b) => clamp((t - a) / (b - a));
+const sstep = (a, b, x) => { const t = prog(x, a, b); return t * t * (3 - 2 * t); };
+const win = (t, a, b, fi = .5, fo = .5) => sstep(a, a + fi, t) * (1 - sstep(b - fo, b, t));
+const E = {
+  lin: t => clamp(t),
+  io: t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; },
+  out: t => 1 - Math.pow(1 - clamp(t), 3),
+  in: t => Math.pow(clamp(t), 3),
+  outQuint: t => 1 - Math.pow(1 - clamp(t), 5),
+  outExpo: t => (t = clamp(t)) >= 1 ? 1 : 1 - Math.pow(2, -10 * t),
+  inExpo: t => (t = clamp(t)) <= 0 ? 0 : Math.pow(2, 10 * t - 10),
+  ioExpo: t => { t = clamp(t); return t <= 0 ? 0 : t >= 1 ? 1 : t < .5 ? Math.pow(2, 20 * t - 10) / 2 : (2 - Math.pow(2, -20 * t + 10)) / 2; },
+  ioSine: t => -(Math.cos(PI * clamp(t)) - 1) / 2,
+};
+// 关键帧轨道：[[t, v, ease?], …]，ease 作用于从这一帧到下一帧的那一段（默认三次缓入缓出）
+function track(keys) {
+  return T => {
+    if (T <= keys[0][0]) return keys[0][1];
+    for (let i = 0; i < keys.length - 1; i++) {
+      const [a, va, e] = keys[i], [b, vb] = keys[i + 1];
+      if (T < b) return lerp(va, vb, (e || E.io)((T - a) / (b - a)));
+    }
+    return keys[keys.length - 1][1];
+  };
+}
+function mulberry(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function hash2(i, j) { let h = Math.imul(i, 374761393) + Math.imul(j, 668265263) | 0; h = Math.imul(h ^ h >>> 13, 1274126177); return ((h ^ h >>> 16) >>> 0) / 4294967296; }
+function vnoise(x, y) {
+  const i = Math.floor(x), j = Math.floor(y), fx = x - i, fy = y - j, u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
+  return lerp(lerp(hash2(i, j), hash2(i + 1, j), u), lerp(hash2(i, j + 1), hash2(i + 1, j + 1), u), v);
+}
+function fbm(x, y, o = 4) { let s = 0, a = .5, f = 1, n = 0; for (let k = 0; k < o; k++) { s += a * vnoise(x * f, y * f); n += a; f *= 2.03; a *= .5; } return s / n; }
+
+const SERIF = '"Noto Serif SC", serif', SANS = '"Noto Sans SC", sans-serif', LAT = '"Cormorant Garamond", serif';
+const ORANGE = '#f2a14a', TEAL = '#4fd6c4', CREAM = '#ece6da', DIM = '#8a93a3';
+const O_RGB = '242,161,74', T_RGB = '79,214,196', C_RGB = '236,230,218';
+
+function reset(c) {
+  c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 1; c.globalCompositeOperation = 'source-over'; c.filter = 'none';
+  c.shadowBlur = 0; c.shadowColor = 'rgba(0,0,0,0)'; c.letterSpacing = '0px'; c.setLineDash([]); c.lineCap = 'butt'; c.lineJoin = 'miter';
+}
+
+// ======================================================================== 基础绘制
+function font(size, weight = 500, fam = SERIF, style = '') { ctx.font = `${style} ${weight} ${size}px ${fam}`; }
+function text(s, x, y, o = {}) {
+  if ((o.alpha ?? 1) <= 0) return;
+  ctx.save();
+  font(o.size || 44, o.weight || 500, o.font || SERIF, o.style || '');
+  ctx.textAlign = o.align || 'left'; ctx.textBaseline = o.base || 'middle';
+  ctx.globalAlpha *= o.alpha ?? 1; ctx.letterSpacing = (o.ls || 0) + 'px';
+  if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = o.blur ?? 20; }
+  if (o.filter) ctx.filter = o.filter;
+  ctx.fillStyle = o.color || CREAM; ctx.fillText(s, x, y);
+  ctx.restore();
+}
+// 发光的点：外圈光晕 + 实心核
+function glow(x, y, r, rgb, a = 1, halo = 5) {
+  if (a <= 0 || r <= 0) return;
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const R = r * halo, g = ctx.createRadialGradient(x, y, 0, x, y, R);
+  g.addColorStop(0, `rgba(${rgb},${.55 * a})`); g.addColorStop(.25, `rgba(${rgb},${.18 * a})`); g.addColorStop(1, `rgba(${rgb},0)`);
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, R, 0, TAU); ctx.fill();
+  ctx.restore();
+  ctx.save(); ctx.globalAlpha *= a; ctx.fillStyle = `rgb(${rgb})`; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); ctx.restore();
+}
+function seg(x1, y1, x2, y2, col, lw = 2, a = 1) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a; ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore();
+}
+
+// ======================================================================== 文字：逐字浮现
+// 「」里的字用高亮色
+function runs(s) { const r = []; let hi = false; for (const ch of s) { if (ch === '「') { hi = true; continue; } if (ch === '」') { hi = false; continue; } r.push({ ch, hi }); } return r; }
+function advances(rs, o) { font(o.size, o.weight || 500, o.font || SERIF, o.style || ''); ctx.letterSpacing = '0px'; return rs.map(c => ctx.measureText(c.ch).width + (o.ls || 0)); }
+const runWidth = (rs, o) => advances(rs, o).reduce((a, b) => a + b, 0) - (o.ls || 0);
+// p：0 → 1 的出现进度；每个字从模糊、偏下、透明变清晰，前后重叠 spread 个字
+function typeRun(rs, x, y, o, p, alpha = 1) {
+  if (alpha <= 0 || p <= 0) return;
+  const adv = advances(rs, o), total = adv.reduce((a, b) => a + b, 0) - (o.ls || 0);
+  let cx = o.align === 'center' ? x - total / 2 : o.align === 'right' ? x - total : x;
+  const n = rs.length, sp = o.spread ?? 6;
+  ctx.save(); ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = o.glowBlur ?? 24; }
+  for (let i = 0; i < n; i++) {
+    const e = E.out(clamp((p * (n + sp) - i) / sp));
+    if (e > 0) {
+      ctx.globalAlpha = alpha * e;
+      const b = (1 - e) * (o.blur ?? 10);
+      ctx.filter = b > .4 ? `blur(${b.toFixed(1)}px)` : 'none';
+      ctx.fillStyle = rs[i].hi ? (o.hi || ORANGE) : (o.color || CREAM);
+      ctx.fillText(rs[i].ch, cx, y + (1 - e) * (o.rise ?? 22));
+    }
+    cx += adv[i];
+  }
+  ctx.restore();
+}
+const typeText = (s, x, y, o, p, alpha) => typeRun(runs(s), x, y, o, p, alpha);
+
+// 断行：放得下就一行；否则两行，优先在标点后断、取最均衡的位置；不拆英文单词和数字
+const PUNCT = '，、：；。？！——…';
+function wrapRuns(rs, o, max) {
+  const wid = a => runWidth(a, o);
+  if (wid(rs) <= max) return [rs];
+  let best = -1, bd = 1e9;
+  rs.forEach((c, i) => {
+    if (!PUNCT.includes(c.ch) || i === rs.length - 1) return;
+    const a = wid(rs.slice(0, i + 1)), b = wid(rs.slice(i + 1));
+    if (a <= max && b <= max && Math.abs(a - b) < bd) { bd = Math.abs(a - b); best = i + 1; }
+  });
+  if (best < 0) rs.forEach((c, i) => {
+    if (i === 0 || PUNCT.includes(c.ch) || /\w\w/.test(rs[i - 1].ch + c.ch)) return;
+    const a = wid(rs.slice(0, i)), b = wid(rs.slice(i));
+    if (a <= max && b <= max && Math.abs(a - b) < bd) { bd = Math.abs(a - b); best = i; }
+  });
+  return best > 0 ? [rs.slice(0, best), rs.slice(best)] : [rs];
+}
+
+// ======================================================================== 字幕（无配音，字幕就是旁白）
+// 左下角衬线字，逐字浮现；离场时轻轻上浮淡出。位置避开 TikTok 底部文案和右侧按钮。
+const NARR = { x: 96, y: 1436, lh: 68, max: 880, size: 46, weight: 500, font: SERIF, ls: 2, spread: 7, rise: 14, blur: 8 };
+const WRAP_CACHE = new Map();
+function narration(T) {
+  let shade = 0;
+  for (const [a, b] of LINES) shade = Math.max(shade, win(T, a - .4, b + .6, .5, .6));
+  if (shade > 0) {
+    const g = ctx.createLinearGradient(0, 1250, 0, 1620); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(.5, `rgba(0,0,0,${.42 * shade})`); g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 1250, W, 370);
+  }
+  LINES.forEach(([a, b, s], k) => {
+    const next = LINES[k + 1] ? LINES[k + 1][0] : Infinity, fe = Math.max(b + .15, Math.min(b + .6, next - .05));   // 下一句开始之前淡出完，两句不叠在一起
+    if (T < a || T > fe + .1) return;
+    if (!WRAP_CACHE.has(s)) WRAP_CACHE.set(s, wrapRuns(runs(s), NARR, NARR.max));
+    const lines = WRAP_CACHE.get(s);
+    const fade = 1 - sstep(b, fe, T), drift = -16 * E.in(prog(T, b, fe + .1));
+    const n = lines.reduce((k, l) => k + l.length, 0), dur = Math.min(1.2, .3 + n * .03);
+    lines.forEach((ln, i) => {
+      const t0 = a + i * .22;
+      typeRun(ln, NARR.x, NARR.y + (i - (lines.length - 1)) * NARR.lh + drift, { ...NARR, glow: 'rgba(0,0,0,.9)', glowBlur: 14 }, prog(T, t0, t0 + dur), fade);
+    });
+  });
+}
+
+// ======================================================================== 右上角的年份 / 出处
+function stamp(s, sub, t0, t1, T) {
+  const a = win(T, t0, t1, .7, .7); if (a <= 0) return;
+  const e = E.outExpo(prog(T, t0, t0 + 1.4));
+  text(s, W - 96 + (1 - e) * 40, 412, { font: LAT, weight: 600, size: 56, align: 'right', alpha: a * .95, ls: 4 });
+  if (sub) text(sub, W - 96 + (1 - e) * 70, 462, { font: LAT, style: 'italic', weight: 500, size: 29, align: 'right', color: DIM, alpha: a });
+}
+
+// ======================================================================== 顶部分段进度条
+// 放在 TikTok 顶部“关注 / 推荐”栏之下（y = 336）。当前段落橙色，头部带一颗发光的点；段落名切换时上下交替。
+const PB = { y: 336, x0: 96, x1: 984, gap: 12 };
+function progress(T, a = 1) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a;
+  const span = PB.x1 - PB.x0 - PB.gap * (SECTIONS.length - 1);
+  let x = PB.x0, cur = 0;
+  SECTIONS.forEach(([, s0, s1], i) => {
+    const w = span * (s1 - s0) / TOTAL, f = clamp((T - s0) / (s1 - s0)); if (T >= s0) cur = i;
+    ctx.fillStyle = 'rgba(255,255,255,.14)'; ctx.fillRect(x, PB.y - 1, w, 2);
+    if (f > 0) {
+      ctx.fillStyle = f < 1 ? ORANGE : 'rgba(236,230,218,.7)'; ctx.fillRect(x, PB.y - 1, w * f, 2);
+      if (f < 1) glow(x + w * f, PB.y, 3.2, O_RGB, 1, 5);
+    }
+    x += w + PB.gap;
+  });
+  SECTIONS.forEach(([name, s0], i) => {
+    const s1 = SECTIONS[i + 1] ? SECTIONS[i + 1][1] : TOTAL + 9;
+    const k = (i ? sstep(s0, s0 + .45, T) : 1) * (1 - sstep(s1 - .45, s1, T)); if (k <= 0) return;
+    const e = i ? sstep(s0, s0 + .45, T) : 1, y = PB.y - 34 + (1 - e) * 10 - 10 * sstep(s1 - .45, s1, T);
+    text(`${String(i + 1).padStart(2, '0')}   ${name}`, PB.x0, y, { size: 27, weight: 500, color: CREAM, alpha: .88 * k, ls: 4 });
+  });
+  text(`${String(cur + 1).padStart(2, '0')} / ${String(SECTIONS.length).padStart(2, '0')}`, PB.x1, PB.y - 34, { font: LAT, weight: 600, size: 30, color: DIM, align: 'right', ls: 2 });
+  ctx.restore();
+}
+
+// ======================================================================== 水印
+// 低透明度、缓慢漂移，活动范围避开进度条和字幕
+const WM = '@黑猫不说话';
+function watermark(T, a = 1) {
+  const x = 540 + Math.sin(T * TAU / 47 + 1.1) * 210 + Math.sin(T * TAU / 83 + 1) * 50;
+  const y = 860 + Math.sin(T * TAU / 61 + 1.3) * 300;
+  text(WM, x, y, { font: SANS, weight: 500, size: 30, align: 'center', color: '#ffffff', alpha: .16 * a, ls: 2 });
+}
+
+// ======================================================================== 后期：泛光、暗角、颗粒
+const GRAIN = (() => {
+  const c = mk(256, 256), g = c.getContext('2d'), im = g.createImageData(256, 256), r = mulberry(3);
+  for (let i = 0; i < im.data.length; i += 4) { const v = r() * 255; im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 255; }
+  g.putImageData(im, 0, 0); return c;
+})();
+function bloom(k) {
+  if (k <= 0) return;
+  reset(BCTX); BCTX.globalCompositeOperation = 'copy'; BCTX.filter = 'brightness(.9) contrast(2.4) blur(5px)';
+  BCTX.drawImage(cv, 0, 0, W / 4, H / 4);
+  OUT.save(); OUT.globalCompositeOperation = 'screen'; OUT.globalAlpha = k; OUT.imageSmoothingQuality = 'high'; OUT.drawImage(BLOOM, 0, 0, W, H); OUT.restore();
+}
+function grade(T, vig = .62, grain = .07) {
+  const v = ctx.createRadialGradient(W / 2, H * .46, H * .26, W / 2, H * .46, H * .82);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, `rgba(0,0,0,${vig})`); ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+  const f = Math.floor(T * FPS), ox = (f * 97) % 256, oy = (f * 61) % 256;
+  ctx.save(); ctx.globalAlpha = grain; ctx.globalCompositeOperation = 'overlay';
+  ctx.fillStyle = ctx.createPattern(GRAIN, 'repeat'); ctx.translate(-ox, -oy); ctx.fillRect(0, 0, W + 256, H + 256); ctx.restore();
+}
+
+// ======================================================================== 一帧
+// 剧集提供：TOTAL、SECTIONS、LINES、CUES、INIT()、WORLD(t)、SAMPLES(T)、OVER(T)、MASTER(T)
+function render(T) {
+  T = clamp(T, 0, TOTAL - 1e-4);
+  const n = Math.max(1, SAMPLES(T) | 0);
+  reset(OUT);
+  for (let k = 0; k < n; k++) {
+    const t = n === 1 ? T : T + (k / (n - 1) - .5) * SHUTTER / FPS;
+    ctx = n === 1 ? OUT : LCTX; reset(ctx); ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+    WORLD(t);
+    if (n > 1) { reset(OUT); OUT.globalAlpha = 1 / (k + 1); OUT.drawImage(LAYER, 0, 0); }
+  }
+  ctx = OUT; reset(OUT);
+  bloom(BLOOM_K(T)); reset(OUT);
+  grade(T); reset(OUT);
+  OVER(T); reset(OUT);
+  narration(T); reset(OUT);
+  const m = MASTER(T);
+  watermark(T, m); if (SHOW_PROGRESS) progress(T, m); reset(OUT);
+  const dark = sstep(TOTAL - .9, TOTAL, T);                         // 第一帧就是封面，不做淡入；结尾淡出接片尾
+  if (dark > 0) { OUT.fillStyle = `rgba(0,0,0,${dark})`; OUT.fillRect(0, 0, W, H); }
+}
+
+const SHOW_PROGRESS = false;
+// ======================================================================== No.52 电梯里遇到领导（Wojak 叙事短剧）
+// 一件日常小事，不讲道理：八点五十九赶打卡 → 电梯门一开，领导在里面 → 尬聊（“吃了吗？”“您也是！”）→ 领导讲当年 →
+// 老哥在八楼看见领导，说“我等下一趟” → 随口说项目“挺好的”，被安排下午开会讲 → 领导下电梯，电量掉了三成。
+// 角色（频道主给的形象，在 ../characters/）：小黑 = 主人公（表情随台词换）；领导 = 领导-上司（有点油腻、爱吹牛）；老哥 = 同事-老哥。
+// 两场戏，一场一张图（MiniMax 生成）：电梯厅（lobby）、电梯里（elevator）。电梯楼层显示放在画框下面的黑边里。
+// 两个人说话时面对面：主人公在左边、朝右；别人在右边，原图朝右的左右翻过来。
+// 没有片头、没有进度条，片尾和水印保留。配乐：只有电梯里那段“电梯音乐”（很轻、像从天花板喇叭里放出来的），电梯厅只有环境声。
+// ======================================================================== 时间轴（layout.py 生成，别手改）
+const TOTAL = 90.4;
+const SECTIONS = [['电梯厅', 0.0, 18.4], ['电梯里', 18.4, 90.4]];
+const LINES = [];                                                   // 没有旁白
+const DIALOG = [
+  [0.30, 3.11, '八点五十九，还有一分钟打卡。', '黑', 'think'],
+  [3.31, 5.17, '电梯怎么还在十八楼……', '黑', 'think'],
+  [5.67, 6.86, '快来快来快来……', '黑', 'think'],
+  [7.76, 8.21, '早啊。', '板', 'say'],
+  [8.51, 10.11, '完了，是领导。', '黑', 'think'],
+  [10.31, 13.20, '现在转身去走楼梯，还来得及吗？', '黑', 'think'],
+  [13.40, 14.86, '愣着干嘛？进来啊。', '板', 'say'],
+  [15.16, 17.41, '好、好的！领导早！', '黑', 'say'],
+  [21.00, 25.07, '说点什么吧……不说话，会不会显得很没礼貌？', '黑', 'think'],
+  [25.37, 25.81, '吃了吗？', '板', 'say'],
+  [26.01, 26.93, '您也是！', '黑', 'say'],
+  [27.23, 28.95, '……啊？哦，吃了吃了。', '板', 'say'],
+  [29.25, 30.27, '……我在说什么。', '黑', 'think'],
+  [32.37, 33.61, '谁按的三楼……', '黑', 'think'],
+  [34.11, 38.77, '年轻人啊，我像你这么大的时候，一个人干三个人的活。', '板', 'say'],
+  [39.07, 41.74, '那时候哪有什么加班费，全凭热爱。', '板', 'say'],
+  [42.04, 44.18, '是是是，领导真厉害！', '黑', 'say'],
+  [44.48, 47.01, '这个故事，我已经听了三遍了。', '黑', 'think'],
+  [48.51, 51.41, '早啊……哦，领导也在啊。', '哥', 'say'],
+  [51.61, 53.60, '那个……我等下一趟！', '哥', 'say'],
+  [54.30, 55.11, '叛徒。', '黑', 'think'],
+  [55.81, 56.70, '最近项目怎么样？', '板', 'say'],
+  [56.90, 57.97, '挺好的挺好的！', '黑', 'say'],
+  [58.17, 59.31, '一点都不好。', '黑', 'think'],
+  [59.61, 61.77, '那正好，下午开会你来讲讲。', '板', 'say'],
+  [61.97, 63.29, '啊？……好、好的！', '黑', 'say'],
+  [63.59, 64.96, '我为什么要说“挺好的”……', '黑', 'think'],
+  [66.26, 68.83, '我到了。好好干啊，年轻人。', '板', 'say'],
+  [69.03, 70.67, '好嘞！领导慢走！', '黑', 'say'],
+  [72.17, 74.20, '终于……走了。', '黑', 'think'],
+  [74.60, 77.47, '三十秒的电梯，电量掉了三成。', '黑', 'think'],
+  [78.57, 80.32, '还有八个小时才下班。', '黑', 'think'],
+  [80.82, 81.98, '还有下午的会。', '黑', 'think'],
+];
+const CARDS_AT = 82.78;                                          // 最后的字卡从这里开始
+// 第 i 句台词开始的时间：D(i)；结束：DE(i)
+const D = i => DIALOG[i][0], DE = i => DIALOG[i][1];
+const S = Object.fromEntries(SECTIONS.map(([n, a]) => [n, a]));
+// ======================================================================== 时间轴结束
+const GOLD = '#ffd2a0', RED = '#e5484d', GREEN = '#7fe3a0', LED = '#ff5a4a';
+
+// ======================================================================== 共用
+function pill(s, x, y, a, o = {}) {
+  if (a <= 0) return;
+  const size = o.size || 30; font(size, o.weight || 700, SANS); const w = ctx.measureText(s).width + 56;
+  ctx.save(); ctx.globalAlpha *= a; ctx.translate(x, y); ctx.scale(o.sc || 1, o.sc || 1);
+  ctx.fillStyle = o.fill || 'rgba(20,24,34,.9)'; ctx.beginPath(); ctx.roundRect(-w / 2, -size * 1.05, w, size * 2.1, size * 1.05); ctx.fill();
+  ctx.strokeStyle = o.stroke || 'rgba(255,255,255,.25)'; ctx.lineWidth = 2; ctx.stroke();
+  text(s, 0, 1, { font: SANS, weight: o.weight || 700, size, align: 'center', color: o.color || CREAM });
+  ctx.restore();
+}
+const big = { align: 'center', spread: 3, blur: 14, rise: 18 };
+function mixc(a, b, k) {
+  const p = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)), A2 = p(a), B2 = p(b);
+  return '#' + A2.map((v, i) => Math.round(lerp(v, B2[i], clamp(k, 0, 1))).toString(16).padStart(2, '0')).join('');
+}
+
+// ======================================================================== 照片和人物
+const FR = { x: 0, y: 470, w: 1080, h: 960 }, ASP = FR.w / FR.h, FB = FR.y + FR.h;   // FB：画框底边，半身像贴着它
+const PHOTO_FILES = ['lobby', 'elevator'];                                         // 一场戏一张图，中途不换
+const HERO_EXPR = ['calm', 'sad', 'cry', 'happy', 'shock', 'angry', 'meh', 'awkward'];
+const CAST_FILES = ['领导-上司', '同事-老哥'];
+const PH = {}, IMG = {};
+const load = (src) => { const im = new Image(); im.src = src; return im; };
+for (const n of PHOTO_FILES) PH[n] = load(`photos/${n}.jpg`);
+for (const e of HERO_EXPR) IMG['hero_' + e] = load(`../characters/hero/expr/${e}.png`);
+for (const n of CAST_FILES) IMG[n] = load(`../characters/cast/${n}.png`);
+function ASSETS_READY() { return [...Object.values(PH), ...Object.values(IMG)].every(im => im.complete && im.naturalWidth > 0); }
+
+// 主人公的图（1002×2992，原图的 2 倍）：脸的中心在 (640, 319)，帽子耳朵尖在 y ≈ 10
+const HERO = { fx: 640, fy: 319, top: 10, s: .652 };
+// 其他人：图是平底的半身像。w：画多宽；fx：脸在图里的横向位置（比例）；top：头顶在图里的纵向位置（比例）；
+// face：原图里脸朝哪边（1 = 朝右）。站在画面右边、脸又朝右的，左右翻过来，跟主人公面对面。
+const CAST = {
+  黑: { name: '小黑' },
+  板: { name: '领导', img: '领导-上司', w: 580, fx: .45, top: .02, face: 1 },
+  哥: { name: '老哥', img: '同事-老哥', w: 470, fx: .55, top: .03, face: 1 },
+};
+// 主人公每一句台词时的表情（第 i 句开始时换；别人说话时是他听的反应）
+const HX = ['awkward', 'sad', 'awkward', 'shock', 'shock', 'awkward', 'awkward', 'happy',               // 电梯厅
+            'awkward', 'calm', 'happy', 'awkward', 'cry', 'meh',                                        // 吃了吗 / 您也是 / 三楼
+            'meh', 'meh', 'happy', 'meh', 'happy', 'shock', 'angry',                                    // 领导讲当年 / 老哥“我等下一趟”
+            'shock', 'happy', 'sad', 'shock', 'awkward', 'cry',                                         // 项目“挺好的” → 下午开会
+            'awkward', 'happy', 'calm', 'meh', 'sad', 'cry'];                                           // 领导下电梯 / 电量
+function heroExpr(t) {                                                              // [现在的表情, 上一个表情, 切换进度]
+  let i = -1; for (let k = 0; k < DIALOG.length; k++) if (t >= D(k) - .05) i = k;
+  if (i < 0) return ['awkward', 'awkward', 1];
+  return [HX[i], i ? HX[i - 1] : 'awkward', sstep(D(i) - .05, D(i) + .1, t)];
+}
+const speaking = (who, t) => DIALOG.some(([a, b, , w]) => w === who && t >= a && t <= b);
+const anyoneSpeaking = t => DIALOG.some(([a, b]) => t >= a && t <= b);
+// 画一个人（屏幕坐标）。m：{ who, cx 脸的横向位置, top 主人公帽子耳朵尖的高度, dy 往下挪, a 透明度, sc 缩放 }；返回头顶、脸
+function person(m, t) {
+  const c = CAST[m.who], a = m.a ?? 1; if (a <= 0) return null;
+  const talk = speaking(m.who, t), bob = talk ? -7 * Math.abs(Math.sin(t * 7.5)) : 1.5 * Math.sin(t * 1.6 + m.cx * .01);
+  const dimmed = !talk && anyoneSpeaking(t);                                        // 别人说话时，听的人稍微暗一点
+  ctx.save(); ctx.globalAlpha *= a; if (dimmed || m.filter) ctx.filter = m.filter || 'brightness(.86)';
+  let r;
+  if (m.who === '黑') {
+    const s = HERO.s, top = (m.top ?? 760) + (m.dy || 0) + bob, x = m.cx - HERO.fx * s, y = top - HERO.top * s;
+    const [e, prev, k] = heroExpr(t);
+    if (k < 1) ctx.drawImage(IMG['hero_' + prev], x, y, 1002 * s, 2992 * s);
+    ctx.globalAlpha *= k < 1 ? k : 1; ctx.drawImage(IMG['hero_' + e], x, y, 1002 * s, 2992 * s);
+    r = { top: [m.cx, top], face: [m.cx, y + HERO.fy * s] };
+  } else {
+    const im = IMG[c.img], w = c.w * (m.sc || 1), h = w * im.naturalHeight / im.naturalWidth;
+    const flip = (m.cx > W / 2) === (c.face > 0), fx = flip ? 1 - c.fx : c.fx;            // 朝向画面中间
+    const x = m.cx - fx * w, y = FB - h + 6 + (m.dy || 0) + bob;
+    if (flip) { ctx.translate(x + w, y); ctx.scale(-1, 1); ctx.drawImage(im, 0, 0, w, h); } else ctx.drawImage(im, x, y, w, h);
+    r = { top: [m.cx, y + c.top * h], face: [m.cx, y + (c.top + .2) * h] };
+  }
+  ctx.restore();
+  return { who: m.who, ...r };
+}
+
+// ---------------------------------------------------------------- 镜头：一场戏一张照片，取景基本不动，只有很慢的一点推近
+const XF = .7;                                                                   // 换场时的交叉淡化
+let SHOTS = [];
+function cropAt(sh, t) {
+  const k = E.io(prog(t, sh.t0, sh.t1));
+  let [x, y, w] = sh.a.map((v, i) => lerp(v, sh.b[i], k));
+  const im = PH[sh.img], W0 = im.naturalWidth || 2000, H0 = im.naturalHeight || 2000;
+  w = Math.min(w, W0, H0 * ASP); const h = w / ASP;
+  x = clamp(x, 0, W0 - w); y = clamp(y, 0, H0 - h);
+  return { x, y, w, h, k: FR.w / w };
+}
+
+// ---------------------------------------------------------------- 对话框：统一在画框上部，尾巴指向说话的人
+function wrapText(s, size, maxW) {
+  font(size, 900, SANS); const out = []; let cur = '';
+  for (const ch of s) { if (ctx.measureText(cur + ch).width > maxW && cur && !'，。？！、…」：；～”'.includes(ch)) { out.push(cur); cur = ch; } else cur += ch; }
+  if (cur) out.push(cur); return out;
+}
+// kind：say 白色椭圆；think 淡蓝的“想”泡泡（尾巴是三个小圆点）；ax, ay：说话的人的头顶（屏幕坐标）
+function bubble(str, kind, ax, ay, a) {
+  if (a <= 0) return;
+  const size = 34, lh = size * 1.35, lines = wrapText(str, size, 640);
+  font(size, 900, SANS); const tw = Math.max(...lines.map(l => ctx.measureText(l).width));
+  const w = tw + size * 3.2, h = lines.length * lh + size * 1.7;
+  const bx = clamp(ax, w / 2 + 24, W - w / 2 - 24), by = FR.y + 30 + h / 2;
+  const sc = .86 + .14 * E.outQuint(clamp(a * 1.6));
+  ctx.save(); ctx.globalAlpha *= a; ctx.translate(bx, by); ctx.scale(sc, sc);
+  ctx.shadowColor = 'rgba(0,0,0,.55)'; ctx.shadowBlur = 26; ctx.shadowOffsetY = 6;
+  ctx.fillStyle = kind === 'think' ? 'rgba(214,224,238,.96)' : '#f3efe8';
+  ctx.beginPath(); ctx.ellipse(0, 0, w / 2, h / 2, 0, 0, TAU); ctx.fill();
+  ctx.shadowColor = 'rgba(0,0,0,0)';
+  const dx = ax - bx, dy = Math.max(ay - by, h / 2 + 40), L0 = Math.hypot(dx, dy) || 1, ux = dx / L0, uy = dy / L0;
+  if (kind === 'think') {                                                        // 三个小圆点飘向头
+    for (const [k, r] of [[1.08, 12], [1.3, 8.5], [1.5, 6]]) { const d = (h / 2) / Math.max(.35, uy) * k;
+      ctx.beginPath(); ctx.arc(ux * d, uy * d, r, 0, TAU); ctx.fill(); }
+  } else {                                                                       // 尖尾巴指向说话的人
+    const ex = ux * (w / 2) * .5, ey = uy * (h / 2) * .85, tip = Math.min(L0 - h / 2, 80);
+    ctx.beginPath(); ctx.moveTo(ex - uy * 18, ey + ux * 18); ctx.lineTo(ex + ux * tip, ey + uy * tip); ctx.lineTo(ex + uy * 18, ey - ux * 18); ctx.closePath(); ctx.fill();
+  }
+  lines.forEach((l, i) => text(l, 0, (i - (lines.length - 1) / 2) * lh + 2, { font: SANS, size, weight: 900, align: 'center', color: '#1d1e24' }));
+  ctx.restore();
+}
+// 电池：level 0–1；颜色随电量从红变绿
+function battery(x, y, level, a, label) {
+  if (a <= 0) return;
+  const col = level < .2 ? RED : mixc('#f2c14a', GREEN, (level - .45) / .45);
+  ctx.save(); ctx.globalAlpha *= a;
+  ctx.fillStyle = 'rgba(14,16,22,.88)'; ctx.strokeStyle = CREAM; ctx.lineWidth = 4; ctx.beginPath(); ctx.roundRect(x - 80, y - 38, 160, 76, 14); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = CREAM; ctx.fillRect(x + 82, y - 14, 11, 28);
+  ctx.fillStyle = col; ctx.fillRect(x - 71, y - 29, Math.max(6, 142 * level), 58); ctx.restore();
+  text(Math.round(level * 100) + '%', x, y + 2, { font: SANS, size: 30, weight: 900, align: 'center', color: '#0e2a1b', alpha: a });
+  if (label) text(label, x, y - 70, { font: SANS, size: 32, weight: 900, align: 'center', color: col, alpha: a, glow: 'rgba(0,0,0,.9)', blur: 12 });
+}
+
+// ---------------------------------------------------------------- 电梯：楼层、停靠、开关门（时间表）
+// 电梯厅：一直停在 18 楼 → 一口气下来 → 1 楼到了。电梯里：1 → 3（没人）→ 8（老哥）→ 16（领导下）→ 18。
+const STOPS = () => [                                                             // [到达时间, 楼层, 开门, 关门]
+  [D(2) + .2 - 1.0, 1, D(3) - .9, null],                                          // 电梯厅：到了，门开（关门在下一段开头）
+  [DE(12) + .15, 3, DE(12) + .4, D(13) + 1.4],
+  [DE(17) + .15, 8, DE(17) + .4, DE(19) + .5],
+  [DE(26) + .2, 16, DE(26) + .45, DE(28) + 1.1],
+  [DE(31) + .2, 18, DE(31) + .45, null],
+];
+function liftAt(t) {                                                              // 现在几楼、往哪走、门开着没有
+  const L = S['电梯里'];
+  if (t < L) {                                                                    // 电梯厅：18 楼不动，D(1) 之后一口气下来
+    const t0 = D(1) + .4, t1 = STOPS()[0][0], f = t < t0 ? 18 : t >= t1 ? 1 : Math.round(lerp(18, 1, E.in(prog(t, t0, t1))));
+    return { floor: f, dir: t >= t0 && t < t1 ? -1 : 0, open: t >= STOPS()[0][2] ? 1 : 0 };
+  }
+  const st = STOPS().slice(1), legs = [[L + 1.2, 1]];
+  let prevClose = L + .2;
+  for (const [arr, fl, op, cl] of st) {
+    const [d0, f0] = legs[legs.length - 1];
+    if (t < arr) return { floor: Math.min(fl, Math.floor(lerp(f0, fl, prog(t, d0, arr)) + 1e-6)), dir: t >= d0 ? 1 : 0, open: t < prevClose + .6 && t >= prevClose ? 0 : 0 };
+    if (cl === null || t < cl + .6) return { floor: fl, dir: 0, open: t >= op && (cl === null || t < cl) ? 1 : 0 };
+    legs.push([cl + .6, fl]); prevClose = cl;
+  }
+  return { floor: 18, dir: 0, open: 1 };
+}
+function floorDisplay(t) {                                                        // 画框下面的黑边里：电梯楼层显示（红色 LED）
+  const a = 1 - sstep(CARDS_AT - .6, CARDS_AT - .1, t); if (a <= 0) return;
+  const { floor, dir } = liftAt(t), x = 540, y = 1540;
+  ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = '#0b0b0d'; ctx.strokeStyle = 'rgba(236,230,218,.25)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.roundRect(x - 130, y - 62, 260, 124, 18); ctx.fill(); ctx.stroke(); ctx.restore();
+  text(String(floor), x + 30, y + 4, { font: SANS, size: 84, weight: 900, align: 'center', color: LED, alpha: a, glow: 'rgba(255,70,50,.8)', blur: 18 });
+  if (dir) { const ph = (t * 2.2) % 1, ay = y + 4 - dir * (ph - .5) * 26;
+    text(dir > 0 ? '▲' : '▼', x - 70, ay, { font: SANS, size: 44, weight: 900, align: 'center', color: LED, alpha: a * (1 - Math.abs(ph - .5)), glow: 'rgba(255,70,50,.8)', blur: 12 }); }
+}
+
+// ---------------------------------------------------------------- 每个镜头里的人（屏幕坐标：cx 是脸的横向位置）
+const slide = (t, t0, t1, from, to, e = E.out) => lerp(from, to, e(prog(t, t0, t1)));
+function castIn(sh, t) {
+  switch (sh.name) {
+    case 'lobby': {                                                               // 门一开：领导在里面
+      const op = STOPS()[0][2];
+      return [{ who: '板', cx: slide(t, op + .1, op + .8, 900, 830), a: sstep(op + .05, op + .45, t) }, { who: '黑', cx: 320 }];
+    }
+    case 'elevator': {
+      const [, , op8, cl8] = STOPS()[2], [, , op16] = STOPS()[3];
+      const bro = sstep(op8 + .2, op8 + .7, t) * (1 - sstep(cl8 - .5, cl8, t));          // 八楼：老哥站在门口
+      const boss = slide(t, DE(28) + .1, DE(28) + 1.0, 830, 1500, E.in);                 // 领导说完“好好干”就出去了
+      const peek = -100 - 50 * E.out(prog(t, op8 + .2, op8 + .9));                          // 小一号、在两人中间的后面探出头（下半身被两人挡住）
+      return [{ who: '哥', cx: 575, sc: .6, dy: peek, a: bro }, { who: '板', cx: boss }, { who: '黑', cx: 320 }];
+    }
+  }
+  return [];
+}
+function drawShot(sh, t, a) {
+  if (a <= 0) return null;
+  const c = cropAt(sh, t), im = PH[sh.img];
+  ctx.save(); ctx.globalAlpha = a; ctx.beginPath(); ctx.rect(FR.x, FR.y, FR.w, FR.h); ctx.clip();
+  ctx.save(); ctx.translate(FR.x - c.x * c.k, FR.y - c.y * c.k); ctx.scale(c.k, c.k);
+  if (im.complete && im.naturalWidth) ctx.drawImage(im, 0, 0);
+  ctx.restore();
+  if (sh.name === 'elevator') {                                                   // 门开着时，外面走廊的光照进来一点
+    const op = liftAt(t).open; if (op) { const g = ctx.createLinearGradient(FR.x, 0, FR.x + FR.w, 0); g.addColorStop(0, 'rgba(255,250,235,0)'); g.addColorStop(.5, 'rgba(255,250,235,.10)'); g.addColorStop(1, 'rgba(255,250,235,0)'); ctx.fillStyle = g; ctx.fillRect(FR.x, FR.y, FR.w, FR.h); }
+  }
+  const g = ctx.createLinearGradient(0, FR.y + FR.h * .45, 0, FB); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,.35)');   // 底部压暗一点，人物站得稳
+  ctx.fillStyle = g; ctx.fillRect(FR.x, FR.y, FR.w, FR.h);
+  const out = [];
+  for (const m of castIn(sh, t)) { if (m.cx < -300 || m.cx > W + 300 || (m.a ?? 1) <= 0) continue; const r = person(m, t); if (r) out.push(r); }
+  ctx.restore();
+  return { c, cast: out };
+}
+
+// ======================================================================== 世界层
+function WORLD(t) {
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  let info = null;
+  SHOTS.forEach((sh, i) => {
+    if (t < sh.t0 - XF / 2 || t > sh.t1 + XF / 2) return;
+    const a = i === 0 ? 1 : sstep(sh.t0 - XF / 2, sh.t0 + XF / 2, t);
+    const r = drawShot(sh, t, a); if (r && a > .5) info = { ...r, name: sh.name };
+  });
+  ctx.save(); ctx.strokeStyle = 'rgba(236,230,218,.12)'; ctx.lineWidth = 2; ctx.strokeRect(FR.x - 1, FR.y - 1, FR.w + 2, FR.h + 2); ctx.restore();
+  const me = info && info.cast.find(m => m.who === '黑');
+  // 三楼：门开了，没人
+  const nobody = win(t, STOPS()[1][2] + .2, STOPS()[1][3], .25, .3);
+  text('（门开了……没人）', 700, 830, { font: SANS, size: 34, weight: 700, align: 'center', color: '#c9ced8', alpha: nobody, glow: 'rgba(0,0,0,.9)', blur: 12 });
+  // 电量：掉了三成，又掉一截
+  if (me && info.name === 'elevator') {
+    const lv = lerp(1, .7, E.out(prog(t, D(30) + 1.0, D(30) + 1.6))) - .3 * E.out(prog(t, D(32) + .4, D(32) + 1.0));
+    battery(me.face[0] + 300, me.face[1] - 70, lv, sstep(D(30) + .2, D(30) + .6, t), '电量');
+  }
+  floorDisplay(t);
+  // 对话框：每一句在它说的时候出现，说完淡出
+  DIALOG.forEach(([a, b, s, who, kind], i) => {
+    const next = DIALOG[i + 1] ? DIALOG[i + 1][0] : TOTAL, fe = Math.max(b + .25, Math.min(b + .7, next - .05));
+    if (t < a - .1 || t > fe + .05) return;
+    const k = sstep(a - .1, a + .15, t) * (1 - sstep(fe - .25, fe, t));
+    const m = info && info.cast.find(c => c.who === who);
+    if (m) bubble(s, kind, m.top[0], m.top[1], k);
+  });
+  // 画框上面的黑边：第一段是封面钩子；之后换成标题
+  const L = S['电梯里'], hook = 1 - sstep(L - .8, L - .1, t), ttl = sstep(L - .3, L + .5, t);
+  text('早上八点五十九，', 540, 270, { size: 64, weight: 900, align: 'center', color: CREAM, alpha: hook });
+  text('电梯门一开，领导在里面', 540, 375, { size: 66, weight: 900, align: 'center', color: GOLD, alpha: hook });
+  text('电梯里遇到领导', 540, 300, { font: SERIF, size: 60, weight: 900, align: 'center', color: GOLD, alpha: ttl });
+  text('三十秒，比加班还累', 540, 376, { font: SANS, size: 34, weight: 700, align: 'center', color: CREAM, alpha: ttl * .85 });
+  // 最后的字卡（画框下面）
+  const c1 = win(t, CARDS_AT, CARDS_AT + 4.0, .4, .4), c2 = sstep(CARDS_AT + 3.8, CARDS_AT + 4.3, t);
+  typeText('电梯三十秒，', 540, 1530, { ...big, size: 60, weight: 900, color: CREAM }, prog(t, CARDS_AT, CARDS_AT + .8), c1);
+  typeText('比加班还累。', 540, 1630, { ...big, size: 72, weight: 900, color: GOLD, glow: `rgba(${O_RGB},.5)`, glowBlur: 26 }, prog(t, CARDS_AT + 1.0, CARDS_AT + 2.0), c1);
+  typeText('评论区说说：', 540, 1530, { size: 44, weight: 700, font: SERIF, align: 'center', color: CREAM, spread: 4 }, prog(t, CARDS_AT + 3.9, CARDS_AT + 4.4), c2);
+  typeText('你在电梯里遇到过领导吗？', 540, 1620, { size: 56, weight: 900, font: SERIF, align: 'center', color: GOLD, spread: 5, glow: `rgba(${O_RGB},.4)`, glowBlur: 16 }, prog(t, CARDS_AT + 4.3, CARDS_AT + 5.3), c2);
+}
+function SAMPLES(T) { return SHOTS.some((sh, i) => i && Math.abs(T - sh.t0) < XF / 2 + .05) ? 4 : 2; }
+function BLOOM_K(T) { return .2; }
+function OVER(T) {}
+function MASTER(T) { return 1; }
+function INIT() {
+  const sec = n => S[n];
+  SHOTS = [
+    { name: 'lobby', img: 'lobby', t0: 0, t1: sec('电梯里'), a: [0, 0, 1440], b: [30, 26, 1380] },
+    { name: 'elevator', img: 'elevator', t0: sec('电梯里'), t1: TOTAL + 1, a: [0, 0, 1440], b: [40, 35, 1360] },
+  ];
+}
+
+// ======================================================================== 音效提示表
+function CUES() {
+  const c = [], L = S['电梯里'], ST = STOPS();
+  // ① 电梯厅：大堂的底噪；电梯到了“叮”，门开
+  c.push([0, 'room', { dur: L + .4, gain: 1.6, fi: .05, fo: .5 }]);
+  c.push([ST[0][2] - .25, 'tink', { f: 1318.5, gain: .07 }], [ST[0][2] - .05, 'tink', { f: 1046.5, gain: .06 }], [ST[0][2], 'doors', { gain: .9 }]);
+  // ② 电梯里：门关上，电梯一直嗡嗡地走；每停一层“叮”、开门、关门
+  c.push([L + .1, 'doors', { gain: .9 }], [L + .5, 'lift', { dur: TOTAL - L, gain: 1.2, fi: .8, fo: 1.0 }]);
+  for (const [arr, , op, cl] of ST.slice(1)) {
+    c.push([arr, 'tink', { f: 1318.5, gain: .06 }], [arr + .2, 'tink', { f: 1046.5, gain: .05 }], [op, 'doors', { gain: .8 }]);
+    if (cl !== null) c.push([cl, 'doors', { gain: .8 }]);
+  }
+  // 电量掉了：两次
+  c.push([D(30) + 1.0, 'lowbat', { gain: .7 }], [D(32) + .4, 'lowbat', { gain: .8 }]);
+  c.push([CARDS_AT, 'shimmer', { f: [698.5, 880, 1046.5, 1396.9], gain: .06 }]);
+  return c.sort((a, b) => a[0] - b[0]);
+}
+
+// ======================================================================== 字体、播放与导出接口
+let fontsReady = false;
+Promise.all([['900', SERIF], ['700', SERIF], ['500', SERIF], ['700', SANS], ['500', SANS], ['italic 500', LAT], ['italic 600', LAT], ['600', LAT]]
+  .map(([w, f]) => document.fonts.load(`${w} 40px ${f}`, '电梯里遇到领导 Aa')))
+  .then(() => document.fonts.ready).then(() => { INIT(); fontsReady = true; render(0); });
+window.__ready = () => fontsReady && (typeof ASSETS_READY !== 'function' || ASSETS_READY());   // 照片这类素材（No.50 起）也要加载完
+window.__frame = (t, q = .95) => { render(t); return cv.toDataURL('image/jpeg', q); };
+window.__duration = () => TOTAL;
+window.__cues = () => ({ total: TOTAL, cues: typeof CUES === 'function' ? CUES() : CUES, sections: SECTIONS.map(([name, t0, t1]) => ({ name, t0, t1 })) });
+
+if (!EXPORT) {
+  const au = new Audio('audio.wav');
+  let playing = false, clock0 = 0, pausedAt = 0, useAudio = true;
+  const now = () => useAudio && !au.paused ? au.currentTime : playing ? (performance.now() - clock0) / 1000 : pausedAt;
+  function loop() { if (!playing) return; const T = now(); render(T); if (T >= TOTAL) { playing = false; pausedAt = 0; au.pause(); return; } requestAnimationFrame(loop); }
+  function play() { playing = true; clock0 = performance.now() - pausedAt * 1000; au.currentTime = pausedAt; au.play().catch(() => { useAudio = false; }); requestAnimationFrame(loop); }
+  function pause() { pausedAt = now(); playing = false; au.pause(); }
+  document.getElementById('stage').onclick = () => playing ? pause() : play();
+  addEventListener('keydown', e => {
+    if (e.code === 'Space') { e.preventDefault(); playing ? pause() : play(); }
+    if (e.code === 'ArrowRight' || e.code === 'ArrowLeft') { const t = clamp(now() + (e.code === 'ArrowRight' ? 5 : -5), 0, TOTAL); pausedAt = t; clock0 = performance.now() - t * 1000; au.currentTime = t; if (!playing) render(t); }
+  });
+} else document.getElementById('hint').remove();
+</script>
+</body>
+</html>

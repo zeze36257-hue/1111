@@ -1,0 +1,12 @@
+{"no": 52, "title": "电梯里遇到领导", "fullTitle": "电梯里遇到领导",
+ "next": "",
+ "intro": false,
+ "progress": false,
+ "voice": {"id": "Chinese (Mandarin)_Gentleman", "model": "speech-2.8-hd"},
+ "voices": {
+  "黑": {"id": "Chinese (Mandarin)_Gentleman", "model": "speech-2.8-hd", "speed": 0.95},
+  "板": {"id": "Chinese (Mandarin)_Reliable_Executive", "model": "speech-2.8-hd", "speed": 0.9},
+  "哥": {"id": "Chinese (Mandarin)_Unrestrained_Young_Man", "model": "speech-2.8-hd"}
+ },
+ "cast": {"黑": "小黑", "板": "领导", "哥": "老哥"},
+ "music": {"src": "bgm.wav", "segments": [[0, 400]], "fadeOut": 1.5}}

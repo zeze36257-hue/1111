@@ -290,6 +290,18 @@ def synth(kind, o):
         n = int(.8 * SR); t = np.arange(n) / SR
         x = .7 * sine_sweep(90, 45, n) * env_exp(n, .12) + .35 * band(noise(n), 200, 2500) * env_exp(n, .08) * np.minimum(1, t / .01)
         return pan(np.tanh(x), 0) * g
+    if kind == 'lift':                                                     # 电梯在走：低沉的嗡嗡声 + 一点电机声；fi / fo
+        d = o.get('dur', 6); n = int(d * SR); t = np.arange(n) / SR
+        fade = np.clip(np.minimum(t / max(o.get('fi', 1.0), 1e-3), (d - t) / max(o.get('fo', 1.0), 1e-3)), 0, 1)
+        def ch():
+            x = band(noise(n), 60, 220) * .25 + band(noise(n), 400, 1200) * .015
+            return x + .02 * np.sin(2 * np.pi * 311 * t + 3 * np.sin(2 * np.pi * .3 * t)) + .03 * np.sin(2 * np.pi * 98 * t)
+        return np.stack([ch(), ch()], 1) * fade[:, None] * g
+    if kind == 'doors':                                                    # 电梯门：滑动的“嘶——”，最后轻轻一碰
+        d = o.get('dur', 1.4); n = int(d * SR); t = np.arange(n) / SR; p = t / d
+        x = band(noise(n), 300, 2500) * np.sin(np.pi * np.clip(p / .9, 0, 1)) ** 1.5 * .18 + lp(noise(n), 200) * np.sin(np.pi * p) * .12
+        k = int(.9 * d * SR); x[k:] += (.5 * sine_sweep(150, 70, n - k) * env_exp(n - k, .05))
+        return pan(x, o.get('pan', 0)) * g
     raise ValueError(kind)
 
 
