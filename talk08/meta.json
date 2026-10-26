@@ -1,0 +1,13 @@
+{"no": 51, "title": "今晚聚餐，你去不去", "fullTitle": "今晚聚餐，你去不去？",
+ "next": "",
+ "intro": false,
+ "progress": false,
+ "voice": {"id": "Chinese (Mandarin)_Gentleman", "model": "speech-2.8-hd"},
+ "voices": {
+  "黑": {"id": "Chinese (Mandarin)_Gentleman", "model": "speech-2.8-hd", "speed": 0.95},
+  "哥": {"id": "Chinese (Mandarin)_Unrestrained_Young_Man", "model": "speech-2.8-hd"},
+  "运": {"id": "Chinese (Mandarin)_Warm_Bestie", "model": "speech-2.8-hd"},
+  "猫": {"id": "lovely_girl", "model": "speech-2.8-hd"}
+ },
+ "cast": {"黑": "小黑", "哥": "老哥", "运": "运营", "猫": "猫"},
+ "music": {"src": "bgm.wav", "segments": [[0, 400]], "fadeOut": 1.5}}

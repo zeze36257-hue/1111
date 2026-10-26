@@ -225,6 +225,71 @@ def synth(kind, o):
         d = o.get('dur', .9); n = int(d * SR); p = np.linspace(0, 1, n)
         x = .35 * sine_sweep(o.get('f0', 330), o.get('f1', 880), n) * np.sin(np.pi * p) ** .5 * (1 - p) ** .3
         return pan(x, o.get('pan', 0)) * g
+    # ---- No.51 起（聚餐那期）：日常场景的环境声和小音效
+    if kind in ('room', 'chatter', 'night'):                               # 环境声：办公室底噪 / 餐厅里的人声 / 夜里的街；fi / fo 淡入淡出
+        d = o.get('dur', 6); n = int(d * SR); t = np.arange(n) / SR
+        fade = np.clip(np.minimum(t / max(o.get('fi', 1.0), 1e-3), (d - t) / max(o.get('fo', 1.0), 1e-3)), 0, 1)
+        def ch():
+            if kind == 'room':                                             # 空调和电脑的嗡嗡声
+                return lp(noise(n), 400) * .1 + .02 * np.sin(2 * np.pi * 120 * t) + band(noise(n), 2000, 6000) * .004
+            if kind == 'night':                                            # 远处的车流 + 偶尔一辆车从旁边开过去
+                x = lp(noise(n), 300) * .1 + band(noise(n), 1500, 6000) * .004
+                for _ in range(int(d / 7) + 1):
+                    c, w = rng.uniform(.5, d - .5), rng.uniform(1.2, 2.5); x += band(noise(n), 200, 1800) * np.exp(-((t - c) / w) ** 2) * .1
+                return x
+            # 餐厅：十来个人在说话（像元音的带通噪声 + 一个个音节的起伏，一句一句地停顿），偶尔一阵笑，碗筷碰撞，屋里的底噪
+            x = np.zeros(n); k = 100; m = int(d * k) + 2
+            for j in range(12):
+                f1 = rng.uniform(350, 900); f2 = f1 * rng.uniform(1.8, 2.8)
+                v = band(noise(n), f1 * .8, f1 * 1.25) + .6 * band(noise(n), f2 * .85, f2 * 1.15)
+                gate = np.zeros(m); i = int(rng.uniform(0, 2) * k)
+                while i < m: L = int(rng.uniform(1, 3.5) * k); gate[i:i + L] = 1; i += L + int(rng.uniform(.4, 2.5) * k)
+                syl = (.25 + .75 * np.abs(np.sin(np.pi * rng.uniform(3, 6) * np.arange(m) / k + rng.uniform(0, 3)))) * gate
+                x += v * np.interp(t, np.arange(m) / k, syl) * rng.uniform(.3, 1)
+            for _ in range(int(d / 5)):                                    # 一阵笑：“哈哈哈”
+                c = rng.uniform(0, d - 1.2); L = rng.uniform(.6, 1.2); e = ((t > c) & (t < c + L)) * np.abs(np.sin(np.pi * 5 * (t - c))) * np.sin(np.pi * np.clip((t - c) / L, 0, 1))
+                x += band(noise(n), 700, 2200) * e * 1.2
+            x = lp(x, 3500) * .05
+            hits = np.zeros(n); h = rng.integers(0, n, int(d * 1.2)); hits[h] = rng.uniform(.2, .6, len(h))
+            ring = np.sin(2 * np.pi * 3200 * np.arange(int(.08 * SR)) / SR) * env_exp(int(.08 * SR), .015)
+            x += band(fftconvolve(hits, ring)[:n], 2000, 7000) * .2
+            return x + lp(noise(n), 250) * .12
+        return np.stack([ch(), ch()], 1) * fade[:, None] * g
+    if kind == 'cricket':                                                  # 蛐蛐：尴尬的安静里那种“唧——唧——”，两只，一左一右
+        d = o.get('dur', 2.5); n = int(d * SR); out = np.zeros((n, 2))
+        for f, period, p in [(4300, .62, -.4), (4650, .81, .45)]:
+            x = np.zeros(n); s0 = rng.uniform(0, .3); m = int(.16 * SR); tt = np.arange(m) / SR
+            chirp = np.sin(2 * np.pi * f * tt) * np.sin(np.pi * tt * 3 / .16) ** 2 * np.sin(np.pi * tt / .16)
+            while s0 < d - .2:
+                a = int(s0 * SR); L = min(m, n - a); x[a:a + L] += chirp[:L] * .25; s0 += period * rng.uniform(.9, 1.1)
+            out += pan(x, p)
+        return out * g
+    if kind == 'clink':                                                    # 碰杯
+        n = int(1.2 * SR); t = np.arange(n) / SR; x = .3 * hp(noise(n), 4000) * np.exp(-t / .003)
+        for f, a, tau in [(2650, .5, .25), (3720, .35, .18), (5230, .2, .1), (2810, .4, .22)]: x += a * np.sin(2 * np.pi * f * t) * np.exp(-t / tau)
+        return pan(x * .25, .1) * g
+    if kind == 'shutter':                                                  # 拍照：快门“咔嚓”
+        n = int(.25 * SR); x = np.zeros(n)
+        for s0, a in [(0, 1), (.07, .7)]:
+            k = int(s0 * SR); tt = np.arange(n - k) / SR; x[k:] += a * band(noise(n - k), 1500, 8000) * np.exp(-tt / .008)
+        return pan(x * .5, 0) * g
+    if kind == 'pop':                                                      # 小对话框冒出来：短促的“啵”
+        n = int(.09 * SR); f = o.get('f', 700); x = .4 * sine_sweep(f, f * 1.6, n) * env_exp(n, .02)
+        return pan(x, o.get('pan', 0)) * g
+    if kind == 'lowbat':                                                   # 手机没电：两声往下的提示音
+        n = int(.7 * SR); x = np.zeros(n)
+        for k, f in enumerate([880, 660]):
+            s0 = int(k * .25 * SR); m = int(.18 * SR); tt = np.arange(m) / SR; x[s0:s0 + m] += np.sin(2 * np.pi * f * tt) * np.minimum(1, tt / .005) * np.exp(-tt / .08)
+        return pan(x * .35, 0) * g
+    if kind == 'door':                                                     # 关门：门撞上门框的闷响 + 锁舌“咔哒”
+        n = int(.9 * SR); t = np.arange(n) / SR
+        x = .8 * sine_sweep(110, 60, n) * env_exp(n, .09) + .5 * lp(noise(n), 400) * env_exp(n, .05)
+        x += hp(noise(n), 2500) * np.exp(-np.maximum(0, t - .09) / .006) * (t >= .09) * .5
+        return pan(np.tanh(x * 1.2) * .8, .2) * g
+    if kind == 'flop':                                                     # 往沙发上一倒
+        n = int(.8 * SR); t = np.arange(n) / SR
+        x = .7 * sine_sweep(90, 45, n) * env_exp(n, .12) + .35 * band(noise(n), 200, 2500) * env_exp(n, .08) * np.minimum(1, t / .01)
+        return pan(np.tanh(x), 0) * g
     raise ValueError(kind)
 
 
