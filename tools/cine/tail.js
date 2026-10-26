@@ -4,7 +4,7 @@ let fontsReady = false;
 Promise.all([['900', SERIF], ['700', SERIF], ['500', SERIF], ['700', SANS], ['500', SANS], ['italic 500', LAT], ['italic 600', LAT], ['600', LAT]]
   .map(([w, f]) => document.fonts.load(`${w} 40px ${f}`, '{{TITLE}} Aa')))
   .then(() => document.fonts.ready).then(() => { INIT(); fontsReady = true; render(0); });
-window.__ready = () => fontsReady;
+window.__ready = () => fontsReady && (typeof ASSETS_READY !== 'function' || ASSETS_READY());   // 照片这类素材（No.50 起）也要加载完
 window.__frame = (t, q = .95) => { render(t); return cv.toDataURL('image/jpeg', q); };
 window.__duration = () => TOTAL;
 window.__cues = () => ({ total: TOTAL, cues: typeof CUES === 'function' ? CUES() : CUES, sections: SECTIONS.map(([name, t0, t1]) => ({ name, t0, t1 })) });

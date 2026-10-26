@@ -14,7 +14,7 @@ src = open(os.path.join(ep, 'scenes.js'), encoding='utf-8').read()
 
 
 def block(name):
-    m = re.search(r'const ' + name + r' = \[(.*?)\n\];', src, re.S)
+    m = re.search(r'const ' + name + r' = \[([^;]*?)\];', src, re.S)          # 不跨过下一个 const（例如一行写完的 LINES = [];）
     return re.findall(r"\[([\d.]+), ([\d.]+), '([^']+)'(?:, '([^']*)')?(?:, '([^']*)')?\]", m.group(1)) if m else []
 
 

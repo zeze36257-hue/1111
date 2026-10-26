@@ -202,6 +202,25 @@ def synth(kind, o):
             x += band(drops, 1800, 6000) * .9
             return lp(x, 900) * 1.8 if o.get('muffle') else x
         return np.stack([ch(), ch()], 1) * fade[:, None] * g
+    if kind == 'crowd':                                                    # 街上：人声嗡嗡 + 车流的低噪；fi / fo 淡入淡出
+        d = o.get('dur', 6); n = int(d * SR); t = np.arange(n) / SR
+        fade = np.clip(np.minimum(t / max(o.get('fi', 1.0), 1e-3), (d - t) / max(o.get('fo', 1.0), 1e-3)), 0, 1)
+        def ch():
+            babble = sum(band(noise(n), 300 + 200 * j, 900 + 300 * j) * (.5 + .5 * np.sin(2 * np.pi * (.7 + .3 * j) * t + j)) for j in range(4)) * .12
+            return babble + lp(noise(n), 220) * .35 + band(noise(n), 1500, 5000) * .03
+        return np.stack([ch(), ch()], 1) * fade[:, None] * g
+    if kind == 'honk':                                                     # 汽车喇叭：两个音的方波，短促
+        n = int(.55 * SR); t = np.arange(n) / SR; env = np.minimum(1, t / .01) * np.minimum(1, (.55 - t) / .06)
+        x = (np.sign(np.sin(2 * np.pi * 415 * t)) + np.sign(np.sin(2 * np.pi * 523 * t))) * .12 * env
+        return pan(lp(x, 3000), o.get('pan', .3)) * g
+    if kind == 'birds':                                                    # 清晨的鸟叫：零星的上下滑音
+        d = o.get('dur', 6); n = int(d * SR); x = np.zeros(n)
+        for _ in range(int(d * 1.6)):
+            s0 = int(rng.uniform(0, max(1, d - .5)) * SR); m = int(rng.uniform(.06, .16) * SR); f0 = rng.uniform(2600, 4200)
+            tt = np.arange(m) / SR; f = f0 * (1 + rng.choice([-1, 1]) * .35 * tt / tt[-1]); ph = 2 * np.pi * np.cumsum(f) / SR
+            x[s0:s0 + m] += np.sin(ph) * np.sin(np.pi * tt / tt[-1]) * rng.uniform(.1, .3)
+        fade = np.clip(np.minimum(np.arange(n) / SR / 1.0, (d - np.arange(n) / SR) / 1.0), 0, 1)
+        return pan(x * fade, np.sin(np.arange(n) / SR * 1.3) * .6) * g
     if kind == 'bar':                                                      # 柱子升起：上滑的音
         d = o.get('dur', .9); n = int(d * SR); p = np.linspace(0, 1, n)
         x = .35 * sine_sweep(o.get('f0', 330), o.get('f1', 880), n) * np.sin(np.pi * p) ** .5 * (1 - p) ** .3
@@ -228,6 +247,8 @@ if meta.get('voice') and os.path.exists(os.path.join(vdir, 'index.json')):
     for name, e in json.load(open(os.path.join(vdir, 'index.json'), encoding='utf-8')).items():
         x = hp(decode(os.path.join(vdir, name))[:, 0], 70)
         k = np.flatnonzero(np.abs(x) > 10 ** (-45 / 20)); x = x[max(0, k[0] - int(.03 * SR)):] if len(k) else x   # 去掉开头的静音，对准字幕
+        if meta.get('voices'):                                             # 几个角色几种声音（No.50 起）：每句先拉到一样响
+            on = np.abs(x) > 10 ** (-40 / 20); x = x * (.1 / (np.sqrt((x[on] ** 2).mean()) + 1e-9) if on.any() else 1) * (.8 if e.get('kind') == 'think' else 1)
         s = int(e['start'] * SR); x = x[:N - s]; voice[s:s + len(x)] += x[:, None]
     talk = np.convolve(np.abs(voice[:, 0]) > 10 ** (-40 / 20), np.ones(int(.25 * SR)), 'same') > 0      # 说话的区间（含字间小停顿）
     duck = sosfilt(butter(1, 2.5, 'lowpass', fs=SR, output='sos'), talk.astype(float))                 # 平滑：约 0.1 秒压下、0.4 秒回来

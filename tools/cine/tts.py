@@ -26,12 +26,12 @@ idx = json.load(open(idx_path, encoding='utf-8')) if os.path.exists(idx_path) el
 
 
 def block(name):
-    m = re.search(r'const ' + name + r' = \[(.*?)\n\];', src, re.S)
+    m = re.search(r'const ' + name + r' = \[([^;]*?)\];', src, re.S)          # 不跨过下一个 const（例如一行写完的 LINES = [];）
     return re.findall(r"\[([\d.]+), ([\d.]+), '([^']+)'(?:, '([^']*)')?(?:, '([^']*)')?\]", m.group(1)) if m else []
 
 
 total = json.load(open(os.path.join(ep, 'cues.json'), encoding='utf-8'))['total']   # 正片长度（export.cjs --cues 写的）
-rows = sorted((float(a), float(b), t, who) for a, b, t, who, _ in block('LINES') + block('BIGLINES') + block('DIALOG'))
+rows = sorted((float(a), float(b), t, who, kind) for a, b, t, who, kind in block('LINES') + block('BIGLINES') + block('DIALOG'))
 voices = meta.get('voices', {})
 
 
@@ -66,7 +66,7 @@ for e_ in idx.values():
     p_ = os.path.join(out_dir, e_.get('file', ''))
     if e_.get('tkey') and os.path.exists(p_): pool.setdefault(e_['tkey'], (open(p_, 'rb').read(), e_['dur'], e_['speed']))
 v0 = v
-for i, (a, b, text, who) in enumerate(rows):
+for i, (a, b, text, who, kind) in enumerate(rows):
     v = voices.get(who, v0) if who else v0                                     # 对话：每个角色自己的声音
     base = v.get('speed', 1.0)
     room = (rows[i + 1][0] if i + 1 < len(rows) else total) - a - .15        # 到下一句开始之前说完
@@ -90,7 +90,7 @@ for i, (a, b, text, who) in enumerate(rows):
     start = a - min(lead, max(0, d - room))
     if prev: start = max(start, prev['start'] + prev['dur'] + .15)        # 上一句超时了：等它说完再开口
     start = round(start, 2)
-    idx[name] = {'key': key, 'tkey': tkey, 'file': name, 'start': start, 'text': text, 'who': who, 'speed': round(speed, 3), 'dur': round(d, 2), 'room': round(room, 2)}
+    idx[name] = {'key': key, 'tkey': tkey, 'file': name, 'start': start, 'text': text, 'who': who, 'kind': kind, 'speed': round(speed, 3), 'dur': round(d, 2), 'room': round(room, 2)}
     json.dump(idx, open(idx_path, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
     print(f'{name}  {start:6.2f}s  {d:4.2f}/{room:4.2f}s  x{speed:.2f}  {text}')
 for name in list(idx):                                                     # 删掉多出来的旧句子

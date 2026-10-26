@@ -1,0 +1,12 @@
+{"no": 50, "title": "高敏感人群", "fullTitle": "高敏感人群：不是你太敏感，是你感受得更多",
+ "next": "",
+ "intro": false,
+ "voice": {"id": "Chinese (Mandarin)_Gentleman", "model": "speech-2.8-hd"},
+ "voices": {
+  "黑": {"id": "Chinese (Mandarin)_Gentleman", "model": "speech-2.8-hd", "speed": 0.95},
+  "橘": {"id": "Chinese (Mandarin)_Unrestrained_Young_Man", "model": "speech-2.8-hd"},
+  "姐": {"id": "Chinese (Mandarin)_Gentle_Senior", "model": "speech-2.8-hd", "speed": 0.97},
+  "板": {"id": "Chinese (Mandarin)_Reliable_Executive", "model": "speech-2.8-hd", "speed": 0.9}
+ },
+ "cast": {"黑": "小黑", "橘": "阿橘", "姐": "学姐", "板": "老板"},
+ "music": {"src": "bgm.wav", "segments": [[0, 400]], "fadeOut": 1.0}}
