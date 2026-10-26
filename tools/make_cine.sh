@@ -37,13 +37,14 @@ V='fps=30,format=yuv420p,setsar=1'; A='aresample=48000,aformat=channel_layouts=s
 if [ "$INTRO" = 1 ]; then
   ffmpeg -loglevel error -y -i "$ROOT/brand/片头_黑猫不说话.mp4" -i "$EP/body.mp4" -i "$EP/outro_raw.mp4" -filter_complex \
     "[0:v]$V[v0];[1:v]$V[v1];[2:v]$V[v2];[0:a]$A[a0];[1:a]$A[a1];[2:a]$A[a2];[v0][a0][v1][a1][v2][a2]concat=n=3:v=1:a=1[v][a]" \
-    -map "[v]" -map "[a]" -c:v libx264 -crf 18 -preset slow -profile:v high -c:a aac -b:a 256k -movflags +faststart "$EP/$OUT"
+    -map "[v]" -map "[a]" -c:v libx264 -crf 18 -maxrate 4500k -bufsize 9000k -preset slow -profile:v high -c:a aac -b:a 256k -movflags +faststart "$EP/$OUT"
 else                                                                     # 不要片头：正片 + 片尾
   ffmpeg -loglevel error -y -i "$EP/body.mp4" -i "$EP/outro_raw.mp4" -filter_complex \
     "[0:v]$V[v1];[1:v]$V[v2];[0:a]$A[a1];[1:a]$A[a2];[v1][a1][v2][a2]concat=n=2:v=1:a=1[v][a]" \
-    -map "[v]" -map "[a]" -c:v libx264 -crf 18 -preset slow -profile:v high -c:a aac -b:a 256k -movflags +faststart "$EP/$OUT"
+    -map "[v]" -map "[a]" -c:v libx264 -crf 18 -maxrate 4500k -bufsize 9000k -preset slow -profile:v high -c:a aac -b:a 256k -movflags +faststart "$EP/$OUT"
 fi
 rm -f "$EP/body.mp4" "$EP/outro_raw.mp4"
+# 码率上限 4.5 Mbps：真实照片加颗粒很占码率，不封顶的话 2 分半就超过 GitHub 单个文件 100 MB 的上限（抖音上传后也会重新压缩）
 printf 'shots/\naudio.wav\naudio_raw.wav\ncues.json\nbody.mp4\noutro_raw.mp4\nout.mp4\n__pycache__/\n' > "$EP/.gitignore"
 if [ -f "$EP/music.py" ]; then echo 'bgm.wav' >> "$EP/.gitignore"; fi
 echo "done: $EP/$OUT ($(ffprobe -v error -show_entries format=duration -of csv=p=0 "$EP/$OUT")s)"
