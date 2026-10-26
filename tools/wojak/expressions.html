@@ -1,0 +1,134 @@
+<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0">
+<!-- 主人公的表情：在原图 characters/hero/ref.png 上擦掉眉毛、眼睛、嘴，再画新的。
+     下面的坐标都是逐像素量过的原图位置（1024×1536），只对这张原图有效。用 make_expressions.cjs 出图。 -->
+<canvas id="c"></canvas>
+<script>
+// 在原图上改表情：坐标都是原图（1024×1536）的像素，画在 K 倍的画布上
+const K = 2, INK = '#141414';
+const cv = document.getElementById('c'), g = cv.getContext('2d');
+const img = new Image(); img.src = new URLSearchParams(location.search).get('src');
+// 一笔：三次贝塞尔，两头细中间粗，像原图的墨线
+function brush(p, w = 2, col = INK, taper = .35) {
+  const N = 40, L = [], R = [];
+  const at = t => { const u = 1 - t; return [u*u*u*p[0] + 3*u*u*t*p[2] + 3*u*t*t*p[4] + t*t*t*p[6], u*u*u*p[1] + 3*u*u*t*p[3] + 3*u*t*t*p[5] + t*t*t*p[7]]; };
+  for (let i = 0; i <= N; i++) {
+    const t = i / N, a = at(Math.max(0, t - .01)), b = at(Math.min(1, t + .01)), c = at(t);
+    let nx = -(b[1] - a[1]), ny = b[0] - a[0]; const l = Math.hypot(nx, ny) || 1; nx /= l; ny /= l;
+    const ww = w * (taper + (1 - taper) * Math.pow(Math.sin(Math.PI * t), .5)) / 2;
+    L.push([c[0] + nx * ww, c[1] + ny * ww]); R.push([c[0] - nx * ww, c[1] - ny * ww]);
+  }
+  g.beginPath(); [...L, ...R.reverse()].forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.closePath(); g.fillStyle = col; g.fill();
+}
+const line = (pts, w, col) => brush(pts.length === 4 ? [pts[0], pts[1], (2*pts[0]+pts[2])/3, (2*pts[1]+pts[3])/3, (pts[0]+2*pts[2])/3, (pts[1]+2*pts[3])/3, pts[2], pts[3]] : pts, w, col);
+// 擦掉：沿原来的线画一道白
+const SKIN = '#fcfcfc';                                                            // 脸的底色（不是纯白）
+function erase(p, w = 7) { g.save(); g.strokeStyle = SKIN; g.lineWidth = w; g.lineCap = 'round'; g.beginPath(); g.moveTo(p[0], p[1]); g.bezierCurveTo(...p.slice(2)); g.stroke(); g.restore(); }
+function eraseEll(cx, cy, rx, ry) { g.save(); g.fillStyle = SKIN; g.beginPath(); g.ellipse(cx, cy, rx, ry, 0, 0, 7); g.fill(); g.restore(); }
+// 原图五官的位置（逐像素量过）
+const BROW_L = [500, 135.5, 510, 131.5, 522, 130, 534, 131], BROW_R = [566, 132.5, 576, 131.5, 584, 133, 591, 139.5];
+const eraseBrows = () => { erase(BROW_L, 5); erase(BROW_R, 5); };
+const eraseMouth = () => { erase([526, 221.5, 536, 220.5, 548, 224, 560, 224], 7); erase([560, 224, 566, 224, 570, 223.5, 574, 226.5], 7); };
+const eraseEyes = () => { eraseEll(520.5, 157, 17.5, 8.5); eraseEll(578.5, 161, 13.5, 8); };
+// 一只眼睛：外眼角 a、内眼角 b、上眼皮最高 top、下眼皮最低 bot，瞳孔 (px, py, r)
+function eye(a, b, top, bot, px, py, r, lid = 2.2) {
+  g.save(); g.beginPath(); g.moveTo(a[0], a[1]);
+  g.bezierCurveTo(a[0] + (b[0]-a[0])*.3, top, a[0] + (b[0]-a[0])*.7, top, b[0], b[1]);
+  g.bezierCurveTo(a[0] + (b[0]-a[0])*.7, bot, a[0] + (b[0]-a[0])*.3, bot, a[0], a[1]); g.closePath();
+  g.fillStyle = '#fff'; g.fill(); g.clip();
+  g.fillStyle = INK; g.beginPath(); g.arc(px, py, r, 0, 7); g.fill(); g.restore();
+  brush([a[0], a[1], a[0] + (b[0]-a[0])*.3, top, a[0] + (b[0]-a[0])*.7, top, b[0], b[1]], lid);
+  brush([a[0], a[1], a[0] + (b[0]-a[0])*.3, bot, a[0] + (b[0]-a[0])*.7, bot, b[0], b[1]], 1.2, INK, .2);
+}
+// 脸的区域（从脸中间往外找白色），用来给脸上色（生气变红、尴尬脸红）
+function faceMask() {
+  const W = cv.width, H = cv.height, d = g.getImageData(0, 0, W, H).data, m = new Uint8Array(W * H);
+  const st = [[550 * K, 175 * K]]; const ok = i => d[i*4] > 200 && d[i*4+1] > 200 && d[i*4+2] > 200;
+  while (st.length) { const [x, y] = st.pop(); if (x < 0 || y < 0 || x >= W || y >= H) continue; const i = y * W + x; if (m[i] || !ok(i)) continue; m[i] = 1; st.push([x+1, y], [x-1, y], [x, y+1], [x, y-1]); }
+  return m;
+}
+function tint(m, col, a) {           // 在脸上乘一层颜色：白的地方变色，黑线还是黑的
+  const W = cv.width, H = cv.height, im = g.getImageData(0, 0, W, H), d = im.data;
+  for (let k = 0; k < 2 * K; k++) { const n = m.slice(); for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) { const i = y * W + x; if (!m[i] && (m[i-1] || m[i+1] || m[i-W] || m[i+W])) n[i] = 1; } m.set(n); }
+  for (let i = 0; i < W * H; i++) if (m[i]) for (let c = 0; c < 3; c++) d[i*4+c] *= 1 - a + a * col[c] / 255;
+  g.putImageData(im, 0, 0);
+}
+function blush(cx, cy, rx, ry, a = .45) {
+  const gr = g.createRadialGradient(cx, cy, 0, cx, cy, rx); gr.addColorStop(0, `rgba(240,110,110,${a})`); gr.addColorStop(1, 'rgba(240,110,110,0)');
+  g.save(); g.translate(cx, cy); g.scale(1, ry / rx); g.translate(-cx, -cy); g.fillStyle = gr; g.beginPath(); g.arc(cx, cy, rx, 0, 7); g.fill(); g.restore();
+  for (let i = 0; i < 3; i++) line([cx - 6 + i * 5, cy + 3, cx - 3 + i * 5, cy - 3], .9, 'rgba(200,70,70,.8)');
+}
+function tear(pts, w0, w1, wav = 1.4) {   // 眼泪：从下眼皮流下来，弯弯的、越来越宽，最后一滴
+  const N = 48, L = [], R = [], p = pts;
+  const at = t => { const u = 1 - t; return [u*u*u*p[0] + 3*u*u*t*p[2] + 3*u*t*t*p[4] + t*t*t*p[6] + Math.sin(t * Math.PI * 2.6) * wav * t, u*u*u*p[1] + 3*u*u*t*p[3] + 3*u*t*t*p[5] + t*t*t*p[7]]; };
+  for (let i = 0; i <= N; i++) { const t = i / N, c = at(t), b = at(Math.min(1, t + .02)), a = at(Math.max(0, t - .02));
+    let nx = -(b[1]-a[1]), ny = b[0]-a[0]; const l = Math.hypot(nx, ny) || 1; const w = (w0 + (w1 - w0) * Math.sqrt(t)) / 2 * (1 + .12 * Math.sin(t * 17)); L.push([c[0] + nx/l*w, c[1] + ny/l*w]); R.push([c[0] - nx/l*w, c[1] - ny/l*w]); }
+  const e = at(1);
+  g.save(); g.beginPath(); [...L, ...R.reverse()].forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.closePath();
+  g.fillStyle = 'rgba(135,198,255,.82)'; g.fill(); g.strokeStyle = '#2f6fae'; g.lineWidth = 1; g.stroke();
+  g.beginPath(); g.moveTo(e[0] - w1 * .45, e[1] + 4); g.bezierCurveTo(e[0] - w1 * .6, e[1] + 12, e[0] + w1 * .6, e[1] + 12, e[0] + w1 * .45, e[1] + 4); g.bezierCurveTo(e[0] + w1 * .2, e[1] + 1, e[0] - w1 * .2, e[1] + 1, e[0] - w1 * .45, e[1] + 4); g.fill(); g.stroke();
+  g.strokeStyle = 'rgba(255,255,255,.95)'; g.lineWidth = 1.1; g.beginPath(); for (let i = 8; i <= 36; i++) { const c = at(i / N); i === 8 ? g.moveTo(c[0] - 1.2, c[1]) : g.lineTo(c[0] - 1.2, c[1]); } g.stroke(); g.restore();
+}
+var EXPR = {
+  calm() {},                                                                        // 原图：平静、有点丧
+  sad() {
+    eraseBrows(); eraseMouth();
+    brush([500, 143, 510, 141, 524, 134, 535, 126], 2.2); brush([564, 126, 574, 133, 588, 139, 598, 142], 2.2);
+    brush([543, 133, 546, 131, 549, 131, 552, 133], 1.1, INK, .2); brush([542, 139, 546, 137, 550, 137, 554, 139], 1.1, INK, .2);
+    brush([531, 228, 540, 220, 561, 219, 572, 227], 2.2);
+  },
+  cry() {
+    EXPR.sad();
+    eraseMouth(); erase([531, 228, 540, 220, 561, 219, 572, 227], 8);
+    brush([530, 230, 538, 219, 562, 218, 573, 230], 2.2); brush([538, 228, 545, 225, 556, 225, 564, 229], 1.3, INK, .2);
+    tear([517, 164, 515, 185, 509, 208, 507, 236], 2.5, 8.5); tear([582, 167, 584, 188, 589, 208, 589, 234], 2.5, 8);
+  },
+  happy() {
+    eraseBrows(); eraseMouth();
+    brush([500, 135, 510, 129, 524, 127, 534, 130], 2.2); brush([565, 131, 576, 127, 590, 129, 598, 136], 2.2);
+    brush([528, 216, 538, 229, 562, 230, 575, 215], 2.3); brush([526, 213, 527, 215, 528, 217, 529, 219], 1.2, INK, .2); brush([574, 212, 575, 214, 576, 216, 576, 218], 1.2, INK, .2);
+  },
+  shock() {
+    eraseBrows(); eraseMouth(); eraseEyes();
+    brush([500, 132, 508, 124, 524, 121, 535, 125], 2.2); brush([565, 125, 576, 121, 590, 124, 598, 132], 2.2);
+    eye([503, 158], [538, 158], 142, 173, 520.5, 158, 2.6, 2.2); eye([563, 161], [595, 161], 146, 176, 579, 161, 2.6, 2.2);
+    g.save(); g.fillStyle = '#3a2424'; g.beginPath(); g.ellipse(551, 228, 6.5, 8.5, 0, 0, 7); g.fill(); g.restore();
+    brush([544.5, 228, 544.5, 217, 557.5, 217, 557.5, 228], 2); brush([544.5, 228, 544.5, 239, 557.5, 239, 557.5, 228], 2);
+  },
+  angry() {
+    eraseBrows(); eraseMouth();
+    tint(faceMask(), [255, 120, 105], .55);
+    brush([500, 133, 512, 136, 526, 141, 537, 148], 2.6); brush([564, 148, 576, 141, 588, 136, 599, 133], 2.6);
+    g.save(); g.fillStyle = '#fff'; g.beginPath(); g.roundRect(535, 218, 32, 12, 3); g.fill(); g.restore();
+    brush([535, 218, 545, 217, 557, 217, 567, 218], 1.8, INK, .6); brush([535, 230, 545, 231, 557, 231, 567, 230], 1.8, INK, .6);
+    brush([535, 218, 534, 222, 534, 226, 535, 230], 1.6, INK, .6); brush([567, 218, 568, 222, 568, 226, 567, 230], 1.6, INK, .6);
+    line([535, 224, 567, 224], 1, INK); for (const x of [543, 551, 559]) line([x, 218.5, x, 229.5], 1, INK);
+  },
+  meh() {
+    eraseBrows(); eraseMouth(); eraseEyes();
+    line([501, 138, 534, 136], 2.2); line([565, 137, 597, 139], 2.2);
+    for (const [a, b, px, py] of [[[504, 158], [537, 158], 520.5, 161], [[566, 161], [592, 161], 579, 164]]) {
+      eye(a, b, 154, 168, px, py, 4.2, 1.2);
+      g.save(); g.fillStyle = '#fff'; g.fillStyle = SKIN; g.fillRect(a[0] - 1, a[1] - 12, b[0] - a[0] + 2, 12.5); g.restore();
+      brush([a[0] - 1, a[1], a[0] + 10, a[1] - .5, b[0] - 10, b[1] - .5, b[0] + 1, b[1]], 2.6, INK, .5);
+    }
+    line([532, 223, 570, 223], 2.2);
+  },
+  awkward() {
+    eraseMouth();
+    blush(512, 200, 13, 7); blush(590, 202, 11, 7);
+    brush([531, 224, 541, 220, 556, 224, 566, 219], 2.1); brush([566, 219, 568, 218, 570, 217, 572, 214], 1.4, INK, .3);
+    g.save(); g.fillStyle = 'rgba(150,205,255,.95)'; g.strokeStyle = '#2f6fae'; g.lineWidth = 1.2;
+    g.beginPath(); g.moveTo(612, 150); g.bezierCurveTo(606, 162, 603, 168, 606, 173); g.bezierCurveTo(609, 179, 617, 179, 619, 173); g.bezierCurveTo(621, 167, 617, 161, 612, 150); g.fill(); g.stroke();
+    g.fillStyle = '#fff'; g.beginPath(); g.ellipse(609, 170, 1.5, 3, .3, 0, 7); g.fill(); g.restore();
+  },
+};
+img.onload = () => {
+  cv.width = img.width * K; cv.height = img.height * K;
+  window.render = (name) => {
+    g.setTransform(1, 0, 0, 1, 0, 0); g.imageSmoothingQuality = 'high'; g.drawImage(img, 0, 0, cv.width, cv.height);
+    g.setTransform(K, 0, 0, K, 0, 0);
+    EXPR[name](); return cv.toDataURL('image/png');
+  };
+  window.ready = true;
+};
+</script></body></html>

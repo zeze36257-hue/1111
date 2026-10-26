@@ -236,7 +236,7 @@ function render(T) {
   OVER(T); reset(OUT);
   narration(T); reset(OUT);
   const m = MASTER(T);
-  watermark(T, m); progress(T, m); reset(OUT);
+  watermark(T, m); if (SHOW_PROGRESS) progress(T, m); reset(OUT);
   const dark = sstep(TOTAL - .9, TOTAL, T);                         // 第一帧就是封面，不做淡入；结尾淡出接片尾
   if (dark > 0) { OUT.fillStyle = `rgba(0,0,0,${dark})`; OUT.fillRect(0, 0, W, H); }
 }
