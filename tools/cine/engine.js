@@ -210,6 +210,22 @@ function bloom(k) {
   BCTX.drawImage(cv, 0, 0, W / 4, H / 4);
   OUT.save(); OUT.globalCompositeOperation = 'screen'; OUT.globalAlpha = k; OUT.imageSmoothingQuality = 'high'; OUT.drawImage(BLOOM, 0, 0, W, H); OUT.restore();
 }
+// 暗、昏黄的调色（No.53 起频道主要的主色调）：把画好的一块区域拷出来，加滤镜（偏棕、降饱和、压暗）再画回去，
+// 叠一层琥珀色（乘法：白的变成暖米色，暗部更暗），四周再压一圈暗角。只调画面（照片 + 人物），对话框和字不调。
+const GRADE = mk(W, H), GCTX = GRADE.getContext('2d');
+function warmGrade(x, y, w, h, k = 1, o = {}) {
+  if (k <= 0) return;
+  GCTX.setTransform(1, 0, 0, 1, 0, 0); GCTX.globalCompositeOperation = 'copy'; GCTX.filter = 'none'; GCTX.globalAlpha = 1;
+  GCTX.drawImage(ctx.canvas, x, y, w, h, x, y, w, h);
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+  ctx.globalAlpha = k; ctx.filter = `sepia(${o.sepia ?? .4}) saturate(${o.sat ?? .82}) brightness(${o.bright ?? .8}) contrast(${o.contrast ?? 1.06})`;
+  ctx.drawImage(GRADE, x, y, w, h, x, y, w, h); ctx.filter = 'none';
+  ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = o.tint || 'rgb(255,218,165)'; ctx.fillRect(x, y, w, h);
+  ctx.globalCompositeOperation = 'source-over';
+  const v = ctx.createRadialGradient(x + w / 2, y + h * .48, Math.min(w, h) * .35, x + w / 2, y + h * .48, Math.max(w, h) * .78);
+  v.addColorStop(0, 'rgba(20,12,4,0)'); v.addColorStop(1, `rgba(20,12,4,${o.vig ?? .55})`); ctx.fillStyle = v; ctx.fillRect(x, y, w, h);
+  ctx.restore();
+}
 function grade(T, vig = .62, grain = .07) {
   const v = ctx.createRadialGradient(W / 2, H * .46, H * .26, W / 2, H * .46, H * .82);
   v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, `rgba(0,0,0,${vig})`); ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
