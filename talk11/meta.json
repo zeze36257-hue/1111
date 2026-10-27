@@ -1,0 +1,10 @@
+{"no": 54, "title": "把自己捡回来", "fullTitle": "把自己捡回来",
+ "next": "",
+ "intro": false,
+ "progress": false,
+ "voice": {"id": "Chinese (Mandarin)_Gentleman", "model": "speech-2.8-hd"},
+ "voices": {
+  "黑": {"id": "Chinese (Mandarin)_Gentleman", "model": "speech-2.8-hd", "speed": 0.85}
+ },
+ "cast": {"黑": "小黑"},
+ "music": {"src": "bgm.wav", "segments": [[0, 400]], "fadeOut": 2.0}}

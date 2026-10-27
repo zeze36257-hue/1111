@@ -81,7 +81,7 @@ def synth(kind, o):
         return pan(x * ramp(n, .004), 0) * g
     if kind == 'whoosh':
         d = o.get('dur', .9); x = sweep_noise(d, 300, 4000, lambda p: np.sin(np.pi * p ** .7) ** 2)
-        return pan(x * .35, np.linspace(-.6, .6, len(x))) * g
+        return pan(x * .35, np.linspace(-.6, .6, len(x)) * o.get('dir', 1)) * g          # dir = -1：从右往左
     if kind == 'suck':
         d = o.get('dur', 1.6); x = sweep_noise(d, 4000, 250, lambda p: p ** 2.2)
         return pan(x * .35, np.linspace(.4, 0, len(x))) * g
@@ -313,6 +313,34 @@ def synth(kind, o):
         x = .8 * sine_sweep(140, 80, n) * env_exp(n, .045) + .3 * band(noise(n), 300, 1500) * env_exp(n, .01)
         x += .25 * np.roll(x, int(.11 * SR)) * (t > .11)
         return pan(x * .6, o.get('pan', .3)) * g
+    # ---- No.54 起（跑步那期）
+    if kind == 'step':                                                     # 脚步：街上是鞋跟“嗒”的一下，操场的塑胶跑道闷一点
+        n = int(.18 * SR); t = np.arange(n) / SR; soft = o.get('surface') == 'track'
+        x = (.9 if soft else .6) * sine_sweep(130, 70, n) * env_exp(n, .03 if soft else .02)
+        x += (.25 if soft else .6) * band(noise(n), 700 if soft else 1500, 3000 if soft else 6000) * env_exp(n, .012 if soft else .006)
+        x += .15 * band(noise(n), 300, 1500) * np.exp(-np.maximum(0, t - .03) / .03) * (t > .03)              # 鞋底蹭一下
+        return pan(np.tanh(x * 1.2) * .7, o.get('pan', 0)) * g
+    if kind == 'breath':                                                   # 一口气：吸（短、细）+ 呼（长一点、带“哈”的元音色）；heavy 越大喘得越厉害
+        d = o.get('dur', .8); hv = o.get('heavy', .5); n = int(d * SR); t = np.arange(n) / SR; p = t / d
+        inh = (p < .42) * np.sin(np.pi * np.clip(p / .42, 0, 1)) ** 2
+        exh = (p >= .42) * np.sin(np.pi * np.clip((p - .42) / .58, 0, 1)) ** 1.5
+        x = band(noise(n), 1800, 6000) * inh * (.25 + .2 * hv)
+        x += (band(noise(n), 550, 950) * .8 + band(noise(n), 1100, 1700) * .5 + band(noise(n), 2400, 3200) * .25) * exh * (.45 + .55 * hv)
+        return pan(x * .8, o.get('pan', 0)) * g
+    if kind == 'alarm':                                                    # 手机闹钟：“嘀嘀嘀——嘀嘀嘀——”
+        d = o.get('dur', 1.2); n = int(d * SR); t = np.arange(n) / SR; x = np.zeros(n)
+        for c in np.arange(0, d, .5):
+            for k in range(3):
+                s0 = c + k * .11; on = (t >= s0) & (t < s0 + .07)
+                x += (np.sin(2 * np.pi * 1760 * t) + .4 * np.sin(2 * np.pi * 2637 * t)) * on * np.minimum(1, (t - s0) / .004)
+        return pan(lp(x, 6000) * .22, .15) * g
+    if kind == 'game':                                                     # 打游戏：小小的方波音效，一串一串
+        d = o.get('dur', 1.5); n = int(d * SR); x = np.zeros(n); notes = [523.3, 659.3, 784, 1046.5, 1318.5, 880, 1174.7]
+        c = .05
+        while c < d - .15:
+            m = int(rng.uniform(.04, .08) * SR); s0 = int(c * SR); f = notes[rng.integers(0, len(notes))]; tt = np.arange(m) / SR
+            x[s0:s0 + m] += np.sign(np.sin(2 * np.pi * f * tt)) * np.exp(-tt / .05) * .5; c += rng.uniform(.06, .22)
+        return pan(lp(x, 4000) * .3, o.get('pan', .35)) * g
     raise ValueError(kind)
 
 
