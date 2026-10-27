@@ -371,10 +371,10 @@ function CUES() {
   for (let t = s1 + .8; t < s2 - 1.2; t += .62 + (Math.round(t * 10) % 3) * .05) c.push([t, 'bounce', { gain: .45, pan: .4 }]);
   // 现在：打字、删掉；屏幕暗了；手机一震；消息一条条进来；发送
   const tap = (t0, n, dt, g) => { for (let i = 0; i < n; i++) c.push([t0 + i * dt, 'pop', { f: 1500 + (i % 3) * 120, gain: g }]); };
-  for (const [st, s] of [TYPE1(), TYPE2()]) { tap(st, s.length, .16, .12); tap(st + s.length * .16 + .3, s.length, .07, .08); }
+  for (const [st, s] of [TYPE1(), TYPE2()]) { tap(st, s.length, .16, .45); tap(st + s.length * .16 + .3, s.length, .07, .3); }   // 打字要听得见（屋里很静）
   c.push([BUZZ(), 'buzz', { gain: 1.0 }]);
   for (const i of [17, 18, 20]) c.push([D(i), 'pop', { f: 900, gain: .25 }]);
-  tap(D(19) - .9, 7, .12, .12); c.push([D(19) + .3, 'swish', { dur: .35, gain: .04 }]);
+  tap(D(19) - .9, 7, .12, .4); c.push([D(19) + .3, 'swish', { dur: .35, gain: .04 }]);
   c.push([CARDS_AT, 'shimmer', { f: [587.3, 740, 880, 1174.7], gain: .06 }]);
   return c.sort((a, b) => a[0] - b[0]);
 }
