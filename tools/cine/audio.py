@@ -341,6 +341,20 @@ def synth(kind, o):
             m = int(rng.uniform(.04, .08) * SR); s0 = int(c * SR); f = notes[rng.integers(0, len(notes))]; tt = np.arange(m) / SR
             x[s0:s0 + m] += np.sign(np.sin(2 * np.pi * f * tt)) * np.exp(-tt / .05) * .5; c += rng.uniform(.06, .22)
         return pan(lp(x, 4000) * .3, o.get('pan', .35)) * g
+    # ---- No.55 起（配得感那期）
+    if kind == 'whoomp':                                                   # 模糊转场：一声很低、很短的“嗡”
+        n = int(.6 * SR); t = np.arange(n) / SR; e = np.minimum(1, t / .04)
+        x = sine_sweep(95, 48, n) * e * np.exp(-t / .16) + .25 * lp(noise(n), 180) * e * np.exp(-t / .08)
+        return pan(np.tanh(x * 1.3) * .8, 0) * g
+    if kind == 'impact':                                                   # 回忆快闪的白光：低音冲击
+        n = int(1.0 * SR); t = np.arange(n) / SR
+        x = sine_sweep(110, 36, n) * np.exp(-t / .22) + .5 * lp(noise(n), 260) * np.exp(-t / .05) + .12 * band(noise(n), 1200, 5000) * np.exp(-t / .015)
+        return pan(np.tanh(x * 1.5) * .8, 0) * g
+    if kind == 'tone':                                                     # 白光过后留下的一个长音（很轻、很高）
+        d = o.get('dur', 1.6); n = int(d * SR); t = np.arange(n) / SR; f = o.get('f', 1174.7)
+        e = np.minimum(1, t / .06) * np.exp(-t / (d * .45))
+        x = (np.sin(2 * np.pi * f * t) + .4 * np.sin(np.pi * f * t) + .15 * np.sin(4 * np.pi * f * t)) * e * .3
+        return np.stack([x, np.roll(x, 300)], 1) * g
     raise ValueError(kind)
 
 
