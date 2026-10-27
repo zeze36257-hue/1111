@@ -302,6 +302,17 @@ def synth(kind, o):
         x = band(noise(n), 300, 2500) * np.sin(np.pi * np.clip(p / .9, 0, 1)) ** 1.5 * .18 + lp(noise(n), 200) * np.sin(np.pi * p) * .12
         k = int(.9 * d * SR); x[k:] += (.5 * sine_sweep(150, 70, n - k) * env_exp(n - k, .05))
         return pan(x, o.get('pan', 0)) * g
+    if kind == 'buzz':                                                     # 手机振动：两下“嗡——嗡——”
+        n = int(1.0 * SR); t = np.arange(n) / SR; x = np.zeros(n)
+        for s0 in (0, .45):
+            on = (t >= s0) & (t < s0 + .3); e = np.sin(np.pi * np.clip((t - s0) / .3, 0, 1)) ** .5 * on
+            x += (np.sign(np.sin(2 * np.pi * 172 * t)) * .5 + np.sin(2 * np.pi * 344 * t) * .3) * e
+        return pan(lp(x, 2000) * .35, 0) * g
+    if kind == 'bounce':                                                   # 远处有人在拍篮球：闷闷的一下，带一点回声
+        n = int(.5 * SR); t = np.arange(n) / SR
+        x = .8 * sine_sweep(140, 80, n) * env_exp(n, .045) + .3 * band(noise(n), 300, 1500) * env_exp(n, .01)
+        x += .25 * np.roll(x, int(.11 * SR)) * (t > .11)
+        return pan(x * .6, o.get('pan', .3)) * g
     raise ValueError(kind)
 
 

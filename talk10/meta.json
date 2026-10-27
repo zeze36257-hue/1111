@@ -1,0 +1,12 @@
+{"no": 53, "title": "很久没联系的老朋友", "fullTitle": "很久没联系的老朋友",
+ "next": "",
+ "intro": false,
+ "progress": false,
+ "voice": {"id": "Chinese (Mandarin)_Gentleman", "model": "speech-2.8-hd"},
+ "voices": {
+  "黑": {"id": "Chinese (Mandarin)_Gentleman", "model": "speech-2.8-hd", "speed": 0.9},
+  "杰": {"id": "Chinese (Mandarin)_Stubborn_Friend", "model": "speech-2.8-hd", "speed": 0.95},
+  "猫": {"id": "lovely_girl", "model": "speech-2.8-hd"}
+ },
+ "cast": {"黑": "小黑", "杰": "阿杰", "猫": "猫"},
+ "music": {"src": "bgm.wav", "segments": [[0, 400]], "fadeOut": 2.0}}

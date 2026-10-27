@@ -1,0 +1,689 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>很久没联系的老朋友</title>
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>
+  :root { --bg: #000; }
+  html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; }
+  #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  canvas { height: 100vh; width: 56.25vh; max-width: 100vw; max-height: 177.78vw; background: #000; display: block; }
+  #hint { position: fixed; left: 0; right: 0; bottom: 16px; text-align: center; color: #888; font: 14px "Noto Sans SC", sans-serif; }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c" width="1080" height="1920"></canvas></div>
+<div id="hint">点击播放 / 暂停 · ← → 快退快进</div>
+<script>
+// 黑猫不说话 · 心理学 No.53《很久没联系的老朋友》
+// 电影感引擎（第三季起）：连续镜头、形变转场、逐字浮现的字幕、动态模糊、泛光与胶片颗粒。
+// 每一帧仍是时间 T 的纯函数：实时预览与逐帧导出（?export=1）画出的是同一帧。
+'use strict';
+// ======================================================================== 基础
+const W = 1080, H = 1920, FPS = 30, SHUTTER = .5;                 // 180° 快门：每帧曝光半个帧间隔
+const EXPORT = /[?&]export=1/.test(location.search);
+const cv = document.getElementById('c'), OUT = cv.getContext('2d');
+const mk = (w, h) => Object.assign(document.createElement('canvas'), { width: w, height: h });
+const LAYER = mk(W, H), LCTX = LAYER.getContext('2d');          // 动态模糊：子帧先画在这里，再平均到 OUT
+const BLOOM = mk(W / 4, H / 4), BCTX = BLOOM.getContext('2d');   // 泛光：缩小、提亮部、模糊后叠回去
+let ctx = OUT;
+
+const PI = Math.PI, TAU = PI * 2;
+const clamp = (x, a = 0, b = 1) => x < a ? a : x > b ? b : x;
+const lerp = (a, b, t) => a + (b - a) * t;
+const prog = (t, a, b) => clamp((t - a) / (b - a));
+const sstep = (a, b, x) => { const t = prog(x, a, b); return t * t * (3 - 2 * t); };
+const win = (t, a, b, fi = .5, fo = .5) => sstep(a, a + fi, t) * (1 - sstep(b - fo, b, t));
+const E = {
+  lin: t => clamp(t),
+  io: t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; },
+  out: t => 1 - Math.pow(1 - clamp(t), 3),
+  in: t => Math.pow(clamp(t), 3),
+  outQuint: t => 1 - Math.pow(1 - clamp(t), 5),
+  outExpo: t => (t = clamp(t)) >= 1 ? 1 : 1 - Math.pow(2, -10 * t),
+  inExpo: t => (t = clamp(t)) <= 0 ? 0 : Math.pow(2, 10 * t - 10),
+  ioExpo: t => { t = clamp(t); return t <= 0 ? 0 : t >= 1 ? 1 : t < .5 ? Math.pow(2, 20 * t - 10) / 2 : (2 - Math.pow(2, -20 * t + 10)) / 2; },
+  ioSine: t => -(Math.cos(PI * clamp(t)) - 1) / 2,
+};
+// 关键帧轨道：[[t, v, ease?], …]，ease 作用于从这一帧到下一帧的那一段（默认三次缓入缓出）
+function track(keys) {
+  return T => {
+    if (T <= keys[0][0]) return keys[0][1];
+    for (let i = 0; i < keys.length - 1; i++) {
+      const [a, va, e] = keys[i], [b, vb] = keys[i + 1];
+      if (T < b) return lerp(va, vb, (e || E.io)((T - a) / (b - a)));
+    }
+    return keys[keys.length - 1][1];
+  };
+}
+function mulberry(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function hash2(i, j) { let h = Math.imul(i, 374761393) + Math.imul(j, 668265263) | 0; h = Math.imul(h ^ h >>> 13, 1274126177); return ((h ^ h >>> 16) >>> 0) / 4294967296; }
+function vnoise(x, y) {
+  const i = Math.floor(x), j = Math.floor(y), fx = x - i, fy = y - j, u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
+  return lerp(lerp(hash2(i, j), hash2(i + 1, j), u), lerp(hash2(i, j + 1), hash2(i + 1, j + 1), u), v);
+}
+function fbm(x, y, o = 4) { let s = 0, a = .5, f = 1, n = 0; for (let k = 0; k < o; k++) { s += a * vnoise(x * f, y * f); n += a; f *= 2.03; a *= .5; } return s / n; }
+
+const SERIF = '"Noto Serif SC", serif', SANS = '"Noto Sans SC", sans-serif', LAT = '"Cormorant Garamond", serif';
+const ORANGE = '#f2a14a', TEAL = '#4fd6c4', CREAM = '#ece6da', DIM = '#8a93a3';
+const O_RGB = '242,161,74', T_RGB = '79,214,196', C_RGB = '236,230,218';
+
+function reset(c) {
+  c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 1; c.globalCompositeOperation = 'source-over'; c.filter = 'none';
+  c.shadowBlur = 0; c.shadowColor = 'rgba(0,0,0,0)'; c.letterSpacing = '0px'; c.setLineDash([]); c.lineCap = 'butt'; c.lineJoin = 'miter';
+}
+
+// ======================================================================== 基础绘制
+function font(size, weight = 500, fam = SERIF, style = '') { ctx.font = `${style} ${weight} ${size}px ${fam}`; }
+function text(s, x, y, o = {}) {
+  if ((o.alpha ?? 1) <= 0) return;
+  ctx.save();
+  font(o.size || 44, o.weight || 500, o.font || SERIF, o.style || '');
+  ctx.textAlign = o.align || 'left'; ctx.textBaseline = o.base || 'middle';
+  ctx.globalAlpha *= o.alpha ?? 1; ctx.letterSpacing = (o.ls || 0) + 'px';
+  if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = o.blur ?? 20; }
+  if (o.filter) ctx.filter = o.filter;
+  ctx.fillStyle = o.color || CREAM; ctx.fillText(s, x, y);
+  ctx.restore();
+}
+// 发光的点：外圈光晕 + 实心核
+function glow(x, y, r, rgb, a = 1, halo = 5) {
+  if (a <= 0 || r <= 0) return;
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const R = r * halo, g = ctx.createRadialGradient(x, y, 0, x, y, R);
+  g.addColorStop(0, `rgba(${rgb},${.55 * a})`); g.addColorStop(.25, `rgba(${rgb},${.18 * a})`); g.addColorStop(1, `rgba(${rgb},0)`);
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, R, 0, TAU); ctx.fill();
+  ctx.restore();
+  ctx.save(); ctx.globalAlpha *= a; ctx.fillStyle = `rgb(${rgb})`; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); ctx.restore();
+}
+function seg(x1, y1, x2, y2, col, lw = 2, a = 1) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a; ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore();
+}
+
+// ======================================================================== 文字：逐字浮现
+// 「」里的字用高亮色
+function runs(s) { const r = []; let hi = false; for (const ch of s) { if (ch === '「') { hi = true; continue; } if (ch === '」') { hi = false; continue; } r.push({ ch, hi }); } return r; }
+function advances(rs, o) { font(o.size, o.weight || 500, o.font || SERIF, o.style || ''); ctx.letterSpacing = '0px'; return rs.map(c => ctx.measureText(c.ch).width + (o.ls || 0)); }
+const runWidth = (rs, o) => advances(rs, o).reduce((a, b) => a + b, 0) - (o.ls || 0);
+// p：0 → 1 的出现进度；每个字从模糊、偏下、透明变清晰，前后重叠 spread 个字
+function typeRun(rs, x, y, o, p, alpha = 1) {
+  if (alpha <= 0 || p <= 0) return;
+  const adv = advances(rs, o), total = adv.reduce((a, b) => a + b, 0) - (o.ls || 0);
+  let cx = o.align === 'center' ? x - total / 2 : o.align === 'right' ? x - total : x;
+  const n = rs.length, sp = o.spread ?? 6;
+  ctx.save(); ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = o.glowBlur ?? 24; }
+  for (let i = 0; i < n; i++) {
+    const e = E.out(clamp((p * (n + sp) - i) / sp));
+    if (e > 0) {
+      ctx.globalAlpha = alpha * e;
+      const b = (1 - e) * (o.blur ?? 10);
+      ctx.filter = b > .4 ? `blur(${b.toFixed(1)}px)` : 'none';
+      ctx.fillStyle = rs[i].hi ? (o.hi || ORANGE) : (o.color || CREAM);
+      ctx.fillText(rs[i].ch, cx, y + (1 - e) * (o.rise ?? 22));
+    }
+    cx += adv[i];
+  }
+  ctx.restore();
+}
+const typeText = (s, x, y, o, p, alpha) => typeRun(runs(s), x, y, o, p, alpha);
+
+// 断行：放得下就一行；否则两行，优先在标点后断、取最均衡的位置；不拆英文单词和数字
+const PUNCT = '，、：；。？！——…';
+function wrapRuns(rs, o, max) {
+  const wid = a => runWidth(a, o);
+  if (wid(rs) <= max) return [rs];
+  let best = -1, bd = 1e9;
+  rs.forEach((c, i) => {
+    if (!PUNCT.includes(c.ch) || i === rs.length - 1) return;
+    const a = wid(rs.slice(0, i + 1)), b = wid(rs.slice(i + 1));
+    if (a <= max && b <= max && Math.abs(a - b) < bd) { bd = Math.abs(a - b); best = i + 1; }
+  });
+  if (best < 0) rs.forEach((c, i) => {
+    if (i === 0 || PUNCT.includes(c.ch) || /\w\w/.test(rs[i - 1].ch + c.ch)) return;
+    const a = wid(rs.slice(0, i)), b = wid(rs.slice(i));
+    if (a <= max && b <= max && Math.abs(a - b) < bd) { bd = Math.abs(a - b); best = i; }
+  });
+  return best > 0 ? [rs.slice(0, best), rs.slice(best)] : [rs];
+}
+
+// ======================================================================== 字幕（无配音，字幕就是旁白）
+// 左下角衬线字，逐字浮现；离场时轻轻上浮淡出。位置避开 TikTok 底部文案和右侧按钮。
+const NARR = { x: 96, y: 1436, lh: 68, max: 880, size: 46, weight: 500, font: SERIF, ls: 2, spread: 7, rise: 14, blur: 8 };
+const WRAP_CACHE = new Map();
+function narration(T) {
+  let shade = 0;
+  for (const [a, b] of LINES) shade = Math.max(shade, win(T, a - .4, b + .6, .5, .6));
+  if (shade > 0) {
+    const g = ctx.createLinearGradient(0, 1250, 0, 1620); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(.5, `rgba(0,0,0,${.42 * shade})`); g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 1250, W, 370);
+  }
+  LINES.forEach(([a, b, s], k) => {
+    const next = LINES[k + 1] ? LINES[k + 1][0] : Infinity, fe = Math.max(b + .15, Math.min(b + .6, next - .05));   // 下一句开始之前淡出完，两句不叠在一起
+    if (T < a || T > fe + .1) return;
+    if (!WRAP_CACHE.has(s)) WRAP_CACHE.set(s, wrapRuns(runs(s), NARR, NARR.max));
+    const lines = WRAP_CACHE.get(s);
+    const fade = 1 - sstep(b, fe, T), drift = -16 * E.in(prog(T, b, fe + .1));
+    const n = lines.reduce((k, l) => k + l.length, 0), dur = Math.min(1.2, .3 + n * .03);
+    lines.forEach((ln, i) => {
+      const t0 = a + i * .22;
+      typeRun(ln, NARR.x, NARR.y + (i - (lines.length - 1)) * NARR.lh + drift, { ...NARR, glow: 'rgba(0,0,0,.9)', glowBlur: 14 }, prog(T, t0, t0 + dur), fade);
+    });
+  });
+}
+
+// ======================================================================== 右上角的年份 / 出处
+function stamp(s, sub, t0, t1, T) {
+  const a = win(T, t0, t1, .7, .7); if (a <= 0) return;
+  const e = E.outExpo(prog(T, t0, t0 + 1.4));
+  text(s, W - 96 + (1 - e) * 40, 412, { font: LAT, weight: 600, size: 56, align: 'right', alpha: a * .95, ls: 4 });
+  if (sub) text(sub, W - 96 + (1 - e) * 70, 462, { font: LAT, style: 'italic', weight: 500, size: 29, align: 'right', color: DIM, alpha: a });
+}
+
+// ======================================================================== 顶部分段进度条
+// 放在 TikTok 顶部“关注 / 推荐”栏之下（y = 336）。当前段落橙色，头部带一颗发光的点；段落名切换时上下交替。
+const PB = { y: 336, x0: 96, x1: 984, gap: 12 };
+function progress(T, a = 1) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a;
+  const span = PB.x1 - PB.x0 - PB.gap * (SECTIONS.length - 1);
+  let x = PB.x0, cur = 0;
+  SECTIONS.forEach(([, s0, s1], i) => {
+    const w = span * (s1 - s0) / TOTAL, f = clamp((T - s0) / (s1 - s0)); if (T >= s0) cur = i;
+    ctx.fillStyle = 'rgba(255,255,255,.14)'; ctx.fillRect(x, PB.y - 1, w, 2);
+    if (f > 0) {
+      ctx.fillStyle = f < 1 ? ORANGE : 'rgba(236,230,218,.7)'; ctx.fillRect(x, PB.y - 1, w * f, 2);
+      if (f < 1) glow(x + w * f, PB.y, 3.2, O_RGB, 1, 5);
+    }
+    x += w + PB.gap;
+  });
+  SECTIONS.forEach(([name, s0], i) => {
+    const s1 = SECTIONS[i + 1] ? SECTIONS[i + 1][1] : TOTAL + 9;
+    const k = (i ? sstep(s0, s0 + .45, T) : 1) * (1 - sstep(s1 - .45, s1, T)); if (k <= 0) return;
+    const e = i ? sstep(s0, s0 + .45, T) : 1, y = PB.y - 34 + (1 - e) * 10 - 10 * sstep(s1 - .45, s1, T);
+    text(`${String(i + 1).padStart(2, '0')}   ${name}`, PB.x0, y, { size: 27, weight: 500, color: CREAM, alpha: .88 * k, ls: 4 });
+  });
+  text(`${String(cur + 1).padStart(2, '0')} / ${String(SECTIONS.length).padStart(2, '0')}`, PB.x1, PB.y - 34, { font: LAT, weight: 600, size: 30, color: DIM, align: 'right', ls: 2 });
+  ctx.restore();
+}
+
+// ======================================================================== 水印
+// 低透明度、缓慢漂移，活动范围避开进度条和字幕
+const WM = '@黑猫不说话';
+function watermark(T, a = 1) {
+  const x = 540 + Math.sin(T * TAU / 47 + 1.1) * 210 + Math.sin(T * TAU / 83 + 1) * 50;
+  const y = 860 + Math.sin(T * TAU / 61 + 1.3) * 300;
+  text(WM, x, y, { font: SANS, weight: 500, size: 30, align: 'center', color: '#ffffff', alpha: .16 * a, ls: 2 });
+}
+
+// ======================================================================== 后期：泛光、暗角、颗粒
+const GRAIN = (() => {
+  const c = mk(256, 256), g = c.getContext('2d'), im = g.createImageData(256, 256), r = mulberry(3);
+  for (let i = 0; i < im.data.length; i += 4) { const v = r() * 255; im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 255; }
+  g.putImageData(im, 0, 0); return c;
+})();
+function bloom(k) {
+  if (k <= 0) return;
+  reset(BCTX); BCTX.globalCompositeOperation = 'copy'; BCTX.filter = 'brightness(.9) contrast(2.4) blur(5px)';
+  BCTX.drawImage(cv, 0, 0, W / 4, H / 4);
+  OUT.save(); OUT.globalCompositeOperation = 'screen'; OUT.globalAlpha = k; OUT.imageSmoothingQuality = 'high'; OUT.drawImage(BLOOM, 0, 0, W, H); OUT.restore();
+}
+// 暗、昏黄的调色（No.53 起频道主要的主色调）：把画好的一块区域拷出来，加滤镜（偏棕、降饱和、压暗）再画回去，
+// 叠一层琥珀色（乘法：白的变成暖米色，暗部更暗），四周再压一圈暗角。只调画面（照片 + 人物），对话框和字不调。
+const GRADE = mk(W, H), GCTX = GRADE.getContext('2d');
+function warmGrade(x, y, w, h, k = 1, o = {}) {
+  if (k <= 0) return;
+  GCTX.setTransform(1, 0, 0, 1, 0, 0); GCTX.globalCompositeOperation = 'copy'; GCTX.filter = 'none'; GCTX.globalAlpha = 1;
+  GCTX.drawImage(ctx.canvas, x, y, w, h, x, y, w, h);
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+  ctx.globalAlpha = k; ctx.filter = `sepia(${o.sepia ?? .4}) saturate(${o.sat ?? .82}) brightness(${o.bright ?? .8}) contrast(${o.contrast ?? 1.06})`;
+  ctx.drawImage(GRADE, x, y, w, h, x, y, w, h); ctx.filter = 'none';
+  ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = o.tint || 'rgb(255,218,165)'; ctx.fillRect(x, y, w, h);
+  ctx.globalCompositeOperation = 'source-over';
+  const v = ctx.createRadialGradient(x + w / 2, y + h * .48, Math.min(w, h) * .35, x + w / 2, y + h * .48, Math.max(w, h) * .78);
+  v.addColorStop(0, 'rgba(20,12,4,0)'); v.addColorStop(1, `rgba(20,12,4,${o.vig ?? .55})`); ctx.fillStyle = v; ctx.fillRect(x, y, w, h);
+  ctx.restore();
+}
+function grade(T, vig = .62, grain = .07) {
+  const v = ctx.createRadialGradient(W / 2, H * .46, H * .26, W / 2, H * .46, H * .82);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, `rgba(0,0,0,${vig})`); ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+  const f = Math.floor(T * FPS), ox = (f * 97) % 256, oy = (f * 61) % 256;
+  ctx.save(); ctx.globalAlpha = grain; ctx.globalCompositeOperation = 'overlay';
+  ctx.fillStyle = ctx.createPattern(GRAIN, 'repeat'); ctx.translate(-ox, -oy); ctx.fillRect(0, 0, W + 256, H + 256); ctx.restore();
+}
+
+// ======================================================================== 一帧
+// 剧集提供：TOTAL、SECTIONS、LINES、CUES、INIT()、WORLD(t)、SAMPLES(T)、OVER(T)、MASTER(T)
+function render(T) {
+  T = clamp(T, 0, TOTAL - 1e-4);
+  const n = Math.max(1, SAMPLES(T) | 0);
+  reset(OUT);
+  for (let k = 0; k < n; k++) {
+    const t = n === 1 ? T : T + (k / (n - 1) - .5) * SHUTTER / FPS;
+    ctx = n === 1 ? OUT : LCTX; reset(ctx); ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+    WORLD(t);
+    if (n > 1) { reset(OUT); OUT.globalAlpha = 1 / (k + 1); OUT.drawImage(LAYER, 0, 0); }
+  }
+  ctx = OUT; reset(OUT);
+  bloom(BLOOM_K(T)); reset(OUT);
+  grade(T); reset(OUT);
+  OVER(T); reset(OUT);
+  narration(T); reset(OUT);
+  const m = MASTER(T);
+  watermark(T, m); if (SHOW_PROGRESS) progress(T, m); reset(OUT);
+  const dark = sstep(TOTAL - .9, TOTAL, T);                         // 第一帧就是封面，不做淡入；结尾淡出接片尾
+  if (dark > 0) { OUT.fillStyle = `rgba(0,0,0,${dark})`; OUT.fillRect(0, 0, W, H); }
+}
+
+const SHOW_PROGRESS = false;
+// ======================================================================== No.53 很久没联系的老朋友（Wojak 叙事短剧，慢节奏）
+// 深夜刷到老同学阿杰要搬去深圳 → 聊天记录停在两年前的“下次一起吃饭” → 回忆六年前的篮球场：“谁先不联系，谁是小狗！”
+// → 现在：往上翻聊天记录，打了字又删掉 → 手机一震，阿杰先发来“在吗？突然想起你了。” → “看来，我才是那只小狗。”
+// 这一期起节奏放慢、用镜头讲故事（频道主要求）：空镜开场、中景、慢慢推到脸上的特写、手机插入镜头、黑场转场 + 时间字卡、留白。
+// 一场戏一张图，换取景不换照片：卧室（深夜、现在，同一张，和以前的卧室是同一张照片）、篮球场（回忆，MiniMax 生成，画面泛黄）。
+// 背景挑昏暗、昏黄的；人物不调色（只有回忆那段整体泛黄）。两个人说话时面对面。没有片头、没有进度条，片尾和水印保留。
+// ======================================================================== 时间轴（layout.py 生成，别手改）
+const TOTAL = 110.4;
+const SECTIONS = [['深夜', 0.0, 24.8], ['六年前', 24.8, 49.6], ['现在', 49.6, 110.4]];
+const LINES = [];                                                   // 没有旁白
+const DIALOG = [
+  [7.20, 9.45, '阿杰……要走了啊。', '黑', 'think'],
+  [10.15, 12.84, '上一次聊天，已经是两年前了。', '黑', 'think'],
+  [14.14, 18.22, '说好的“下次一起吃饭”，后来，谁也没再提。', '黑', 'think'],
+  [19.72, 22.06, '我们……是怎么走散的呢？', '黑', 'think'],
+  [27.80, 29.49, '毕业以后，你打算去哪？', '杰', 'say'],
+  [29.89, 32.71, '不知道。走一步看一步吧。', '黑', 'say'],
+  [33.21, 35.38, '不管去哪，我们都要常联系啊！', '杰', 'say'],
+  [35.68, 36.67, '那当然。', '黑', 'say'],
+  [37.17, 39.94, '说好了，谁先不联系，谁是小狗！', '杰', 'say'],
+  [40.34, 41.45, '……幼稚。', '黑', 'say'],
+  [41.85, 45.75, '哈哈，等着吧，到时候肯定是你先不理我。', '杰', 'say'],
+  [46.05, 47.06, '怎么可能。', '黑', 'say'],
+  [52.00, 55.29, '往上翻，以前我们一天能聊一百条。', '黑', 'think'],
+  [56.19, 60.95, '后来是一天一条，再后来，是一年一条。', '黑', 'think'],
+  [64.05, 67.73, '这么久没联系，突然发消息，会不会很奇怪？', '黑', 'think'],
+  [71.03, 73.52, '他可能……早就不记得了吧。', '黑', 'think'],
+  [76.82, 78.73, '在吗？突然想起你了。', '杰', 'msg'],
+  [80.23, 83.09, '我下周就走了。走之前，一起吃个饭吧？', '杰', 'msg'],
+  [83.59, 86.20, '这次，不许再说“下次”了。', '杰', 'msg'],
+  [87.30, 89.40, '好。这次一定。', '黑', 'msg'],
+  [90.10, 92.19, '那就，老地方见。', '杰', 'msg'],
+  [93.69, 97.07, '说好谁先不联系，谁是小狗……', '黑', 'think'],
+  [97.37, 99.95, '看来，我才是那只小狗。', '黑', 'think'],
+  [100.85, 101.45, '喵～', '猫', 'say'],
+];
+const CARDS_AT = 102.25;                                          // 最后的字卡从这里开始
+// 第 i 句台词开始的时间：D(i)；结束：DE(i)
+const D = i => DIALOG[i][0], DE = i => DIALOG[i][1];
+const S = Object.fromEntries(SECTIONS.map(([n, a]) => [n, a]));
+// ======================================================================== 时间轴结束
+const GOLD = '#ffd2a0';
+
+// ======================================================================== 共用
+function warmth(a, x = 540, y = 980, r = 900, rgb = '255,170,90') {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, `rgba(${rgb},${.16 * a})`); g.addColorStop(1, `rgba(${rgb},0)`);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); ctx.restore();
+}
+const big = { align: 'center', spread: 3, blur: 14, rise: 18 };
+
+// ======================================================================== 照片和人物
+const FR = { x: 0, y: 470, w: 1080, h: 960 }, ASP = FR.w / FR.h, FB = FR.y + FR.h;   // FB：画框底边，半身像贴着它
+const PHOTO_FILES = ['bedroom', 'court', 'boxes'];                                  // boxes：朋友圈里的配图
+const HERO_EXPR = ['calm', 'sad', 'cry', 'happy', 'shock', 'angry', 'meh', 'awkward'];
+const CAST_FILES = ['蓝卫衣男'];
+const PH = {}, IMG = {};
+const load = (src) => { const im = new Image(); im.src = src; return im; };
+for (const n of PHOTO_FILES) PH[n] = load(`photos/${n}.jpg`);
+for (const e of HERO_EXPR) IMG['hero_' + e] = load(`../characters/hero/expr/${e}.png`);
+for (const n of CAST_FILES) IMG[n] = load(`../characters/cast/${n}.png`);
+function ASSETS_READY() { return [...Object.values(PH), ...Object.values(IMG)].every(im => im.complete && im.naturalWidth > 0); }
+
+// 主人公的图（1002×2992，原图的 2 倍）：脸的中心在 (640, 319)，帽子耳朵尖在 y ≈ 10；肩上那只猫的头顶在 (270, 180)
+const HERO = { fx: 640, fy: 319, top: 10, s: .652, cat: [270, 180] };
+// 其他人：w 画多宽；fx 脸在图里的横向位置；top 头顶的纵向位置；face 原图里脸朝哪边（1 = 朝右，站在右边时翻过来）
+const CAST = {
+  黑: { name: '小黑' },
+  杰: { name: '阿杰', img: '蓝卫衣男', w: 470, fx: .62, top: .01, face: 1 },
+  猫: { name: '猫' },
+};
+// 主人公每一句台词时的表情（第 i 句开始时换）；EXTRA：台词之间另外换的表情 [时间, 表情]
+const HX = ['calm', 'sad', 'sad', 'sad',                                                   // 深夜
+            'calm', 'calm', 'happy', 'happy', 'happy', 'happy', 'happy', 'happy',           // 六年前
+            'calm', 'sad', 'awkward', 'sad',                                                // 现在：往上翻、打了又删
+            'shock', 'happy', 'happy', 'happy', 'happy', 'calm', 'awkward', 'happy'];        // 他先发来了
+const EXTRA = () => [[DE(16) + .9, 'happy']];                                             // “在吗？”之后：愣住 → 笑出来
+function heroExpr(t) {                                                              // [现在的表情, 上一个表情, 切换进度]
+  const keys = DIALOG.map((d, i) => [D(i) - .05, HX[i]]).concat(EXTRA()).sort((a, b) => a[0] - b[0]);
+  let i = -1; for (let k = 0; k < keys.length; k++) if (t >= keys[k][0]) i = k;
+  if (i < 0) return ['calm', 'calm', 1];
+  return [keys[i][1], i ? keys[i - 1][1] : 'calm', sstep(keys[i][0], keys[i][0] + .2, t)];
+}
+const speaking = (who, t) => DIALOG.some(([a, b, , w, k]) => k !== 'msg' && (w === who || (who === '黑' && w === '猫')) && t >= a && t <= b);
+const anyoneSpeaking = t => DIALOG.some(([a, b, , , k]) => k !== 'msg' && t >= a && t <= b);
+// 画一个人（还没乘镜头的坐标）。返回头顶、脸（主人公还有肩上猫的头顶）
+function person(m, t) {
+  const c = CAST[m.who], a = m.a ?? 1; if (a <= 0) return null;
+  const talk = speaking(m.who, t), bob = talk ? -6 * Math.abs(Math.sin(t * 7)) : 1.5 * Math.sin(t * 1.4 + m.cx * .01);
+  const dimmed = !talk && anyoneSpeaking(t);
+  ctx.save(); ctx.globalAlpha *= a; if (dimmed) ctx.filter = 'brightness(.88)';
+  let r;
+  if (m.who === '黑') {
+    const s = HERO.s, top = (m.top ?? 770) + bob, x = m.cx - HERO.fx * s, y = top - HERO.top * s;
+    const [e, prev, k] = heroExpr(t);
+    if (k < 1) ctx.drawImage(IMG['hero_' + prev], x, y, 1002 * s, 2992 * s);
+    ctx.globalAlpha *= k < 1 ? k : 1; ctx.drawImage(IMG['hero_' + e], x, y, 1002 * s, 2992 * s);
+    r = { top: [m.cx, top], face: [m.cx, y + HERO.fy * s], cat: [x + HERO.cat[0] * s, y + HERO.cat[1] * s] };
+  } else {
+    const im = IMG[c.img], w = c.w, h = w * im.naturalHeight / im.naturalWidth;
+    const flip = (m.cx > W / 2) === (c.face > 0), fx = flip ? 1 - c.fx : c.fx;              // 朝向画面中间
+    const x = m.cx - fx * w, y = FB - h + 6 + bob;
+    if (flip) { ctx.translate(x + w, y); ctx.scale(-1, 1); ctx.drawImage(im, 0, 0, w, h); } else ctx.drawImage(im, x, y, w, h);
+    r = { top: [m.cx, y + c.top * h], face: [m.cx, y + (c.top + .24) * h] };
+  }
+  ctx.restore();
+  return { who: m.who, ...r };
+}
+
+// ---------------------------------------------------------------- 镜头（机位）：同一张照片上换取景。[时间, 焦点 x, 焦点 y, 放大倍数]；两帧时间挨着 = 切
+let CAM_KEYS = [];
+function camAt(t) {
+  const K = CAM_KEYS; if (t <= K[0][0]) return { fx: K[0][1], fy: K[0][2], z: K[0][3] };
+  for (let i = 0; i < K.length - 1; i++) { const [a, ...va] = K[i], [b, ...vb] = K[i + 1];
+    if (t < b) { const k = b - a < .02 ? 0 : E.io((t - a) / (b - a)); return { fx: lerp(va[0], vb[0], k), fy: lerp(va[1], vb[1], k), z: lerp(va[2], vb[2], k) }; } }
+  const L = K[K.length - 1]; return { fx: L[1], fy: L[2], z: L[3] };
+}
+const camMap = (cam, [x, y]) => [cam.fx + (x - cam.fx) * cam.z, cam.fy + (y - cam.fy) * cam.z];
+
+// ---------------------------------------------------------------- 场景：一场戏一张照片；换场用黑场
+let SHOTS = [];
+function cropAt(sh) {
+  const im = PH[sh.img], W0 = im.naturalWidth || 2000, H0 = im.naturalHeight || 2000;
+  let [x, y, w] = sh.crop; w = Math.min(w, W0, H0 * ASP); const h = w / ASP;
+  return { x: clamp(x, 0, W0 - w), y: clamp(y, 0, H0 - h), w, h, k: FR.w / w };
+}
+const PHONE_LIT = t => (t > 3.0 && t < S['六年前']) || (t > S['现在'] && t < SCREEN_OFF()) || t > BUZZ();   // 手机亮着（脸上有屏幕的光）
+function castIn(sh, t) {
+  if (sh.name === 'court') { const a = sstep(S['六年前'] + 2.0, S['六年前'] + 2.6, t);
+    return [{ who: '杰', cx: 830, a }, { who: '黑', cx: 320, a }]; }
+  return [{ who: '黑', cx: 400, a: sh.name === 'night' ? sstep(3.0, 3.8, t) : 1 }];
+}
+function drawShot(sh, t) {
+  const c = cropAt(sh), im = PH[sh.img], cam = camAt(t);
+  ctx.save(); ctx.beginPath(); ctx.rect(FR.x, FR.y, FR.w, FR.h); ctx.clip();
+  ctx.translate(cam.fx, cam.fy); ctx.scale(cam.z, cam.z); ctx.translate(-cam.fx, -cam.fy);
+  ctx.save(); ctx.translate(FR.x - c.x * c.k, FR.y - c.y * c.k); ctx.scale(c.k, c.k); if (im.naturalWidth) ctx.drawImage(im, 0, 0); ctx.restore();
+  const g = ctx.createLinearGradient(0, FR.y + FR.h * .45, 0, FB); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,.35)');
+  ctx.fillStyle = g; ctx.fillRect(FR.x, FR.y, FR.w, FR.h);
+  const out = [];
+  for (const m of castIn(sh, t)) { if ((m.a ?? 1) <= 0) continue; const r = person(m, t); if (r) out.push(r); }
+  const me = out.find(m => m.who === '黑');
+  if (me && sh.name !== 'court' && PHONE_LIT(t)) {                                // 手机屏幕照在脸上：一点冷白的光
+    ctx.save(); ctx.globalCompositeOperation = 'lighter'; const [x, y] = me.face, gl = ctx.createRadialGradient(x + 30, y + 150, 10, x + 30, y + 150, 300);
+    gl.addColorStop(0, 'rgba(170,190,230,.20)'); gl.addColorStop(1, 'rgba(170,190,230,0)'); ctx.fillStyle = gl; ctx.fillRect(x - 330, y - 200, 700, 700); ctx.restore();
+  }
+  ctx.restore();
+  if (sh.name === 'court') memoryLook(t);                                         // 回忆：整体泛黄、颗粒、轻轻闪
+  return { cam, cast: out.map(m => ({ ...m, top: camMap(cam, m.top), face: camMap(cam, m.face), cat: m.cat && camMap(cam, m.cat) })) };
+}
+function memoryLook(t) {
+  warmGrade(FR.x, FR.y, FR.w, FR.h, 1, { sepia: .55, sat: .72, bright: .92, contrast: 1.04, tint: 'rgb(255,226,182)', vig: .6 });
+  ctx.save(); ctx.beginPath(); ctx.rect(FR.x, FR.y, FR.w, FR.h); ctx.clip();
+  ctx.fillStyle = `rgba(0,0,0,${.04 + .03 * Math.sin(t * 23) * Math.sin(t * 7.1)})`; ctx.fillRect(FR.x, FR.y, FR.w, FR.h);   // 老片子的轻微闪烁
+  const r = mulberry(Math.floor(t * 12)); ctx.fillStyle = 'rgba(255,240,215,.55)';                                          // 灰尘和划痕
+  for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.arc(r() * W, FR.y + r() * FR.h, .8 + r() * 1.8, 0, TAU); ctx.fill(); }
+  if (r() < .35) { const x = r() * W; ctx.fillStyle = 'rgba(255,240,215,.12)'; ctx.fillRect(x, FR.y, 1.5, FR.h); }
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------- 对话框：统一在画框上部，尾巴指向说话的人
+function wrapText(s, size, maxW, weight = 900) {
+  font(size, weight, SANS); const out = []; let cur = '';
+  for (const ch of s) { if (ctx.measureText(cur + ch).width > maxW && cur && !'，。？！、…」：；～”'.includes(ch)) { out.push(cur); cur = ch; } else cur += ch; }
+  if (cur) out.push(cur); return out;
+}
+function bubble(str, kind, ax, ay, a, size = 34, noTail = false) {
+  if (a <= 0) return;
+  const lh = size * 1.35, lines = wrapText(str, size, 640);
+  font(size, 900, SANS); const tw = Math.max(...lines.map(l => ctx.measureText(l).width));
+  const w = tw + size * 3.2, h = lines.length * lh + size * 1.7;
+  const bx = clamp(ax, w / 2 + 24, W - w / 2 - 24), by = FR.y + 30 + h / 2;
+  const sc = .86 + .14 * E.outQuint(clamp(a * 1.6));
+  ctx.save(); ctx.globalAlpha *= a; ctx.translate(bx, by); ctx.scale(sc, sc);
+  ctx.shadowColor = 'rgba(0,0,0,.55)'; ctx.shadowBlur = 26; ctx.shadowOffsetY = 6;
+  ctx.fillStyle = kind === 'think' ? 'rgba(214,224,238,.96)' : '#f3efe8';
+  ctx.beginPath(); ctx.ellipse(0, 0, w / 2, h / 2, 0, 0, TAU); ctx.fill();
+  ctx.shadowColor = 'rgba(0,0,0,0)';
+  const dx = ax - bx, dy = Math.max(ay - by, h / 2 + 40), L0 = Math.hypot(dx, dy) || 1, ux = dx / L0, uy = dy / L0;
+  if (noTail) {                                                                  // 手机插入镜头挡在前面时，不画尾巴
+  } else if (kind === 'think') {
+    for (const [k, r] of [[1.08, 12], [1.3, 8.5], [1.5, 6]]) { const d = (h / 2) / Math.max(.35, uy) * k;
+      ctx.beginPath(); ctx.arc(ux * d, uy * d, r, 0, TAU); ctx.fill(); }
+  } else {
+    const ex = ux * (w / 2) * .5, ey = uy * (h / 2) * .85, tip = Math.min(L0 - h / 2, 80);
+    ctx.beginPath(); ctx.moveTo(ex - uy * 18, ey + ux * 18); ctx.lineTo(ex + ux * tip, ey + uy * tip); ctx.lineTo(ex + uy * 18, ey - ux * 18); ctx.closePath(); ctx.fill();
+  }
+  lines.forEach((l, i) => text(l, 0, (i - (lines.length - 1) / 2) * lh + 2, { font: SANS, size, weight: 900, align: 'center', color: '#1d1e24' }));
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------- 手机（插入镜头）：朋友圈 / 聊天记录 / 打字又删 / 锁屏通知 / 新消息
+const PHN = { x: 540, y: 960, w: 500, h: 800 };
+const SCREEN_OFF = () => DE(15) + 1.6, BUZZ = () => D(16) - .55;
+const TYPE1 = () => [DE(13) + .3, '最近还好吗'], TYPE2 = () => [DE(14) + .3, '恭喜啊，要去深圳了'];
+// 插入镜头的时间段：[开始, 结束, 内容]
+const INSERTS = () => [[4.4, DE(1) + 1.0, 'night'], [D(12) - .9, SCREEN_OFF(), 'scroll'], [BUZZ(), DE(16) + .1, 'lock'], [D(17) - .4, DE(20) + .5, 'chat']];
+function insertAt(t) { for (const [a, b, m] of INSERTS()) if (t > a - .01 && t < b + .4) return { a, b, m, k: sstep(a, a + .4, t) * (1 - sstep(b, b + .35, t)) }; return null; }
+function headCrop(key) {                                                         // 头像：从角色图上裁一块头
+  const im = IMG[key]; if (key.startsWith('hero_')) return [im, 400, 0, 480, 480];
+  return [im, im.naturalWidth * .3, 0, im.naturalWidth * .55, im.naturalWidth * .55];
+}
+function avatar(key, x, y, s) { const [im, sx, sy, sw, sh] = headCrop(key); ctx.save(); ctx.beginPath(); ctx.roundRect(x, y, s, s, 8); ctx.clip(); ctx.fillStyle = '#3a3c42'; ctx.fillRect(x, y, s, s);
+  if (im.naturalWidth) ctx.drawImage(im, sx, sy, sw, sh, x, y, s, s); ctx.restore(); }
+function phoneFrame(k, shake = 0) {
+  const { x, y, w, h } = PHN, px = x - w / 2 + shake, py = y - h / 2 + 30 * (1 - k);
+  ctx.save(); ctx.globalAlpha = k; ctx.shadowColor = 'rgba(0,0,0,.7)'; ctx.shadowBlur = 40; ctx.fillStyle = '#0c0c0e';
+  ctx.beginPath(); ctx.roundRect(px, py, w, h, 46); ctx.fill(); ctx.restore();
+  return { sx: px + 14, sy: py + 14, sw: w - 28, sh: h - 28 };
+}
+// 一条聊天：side 0 左（阿杰）/ 1 右（自己）/ 'date'；返回占的高度
+function chatItem(it, sx, sw, y, a) {
+  if (it[0] === 'date') { text(it[1], sx + sw / 2, y + 16, { font: SANS, size: 19, weight: 500, align: 'center', color: '#7d8088', alpha: a }); return 44; }
+  const [side, s] = it, lines = wrapText(s, 24, 250, 500), bw = Math.max(...lines.map(l => { font(24, 500, SANS); return ctx.measureText(l).width; })) + 32, bh = lines.length * 34 + 22;
+  const ax = side ? sx + sw - 62 : sx + 14, bx = side ? ax - 12 - bw : ax + 60;
+  ctx.save(); ctx.globalAlpha *= a; avatar(side ? 'hero_calm' : '蓝卫衣男', ax, y, 48);
+  ctx.fillStyle = side ? '#3d9a62' : '#2c2d31'; ctx.beginPath(); ctx.roundRect(bx, y, bw, bh, 10); ctx.fill(); ctx.restore();
+  lines.forEach((l, i) => text(l, bx + 16, y + 28 + i * 34, { font: SANS, size: 24, weight: 500, color: side ? '#f2f5f2' : '#e6e6e8', alpha: a }));
+  return bh + 22;
+}
+// 聊天记录（从老到新）
+const OLD = [['date', '2020年4月12日 22:41'], [0, '明天打球？'], [1, '走！'], [0, '老规矩，输了的请奶茶'], [1, '你就没赢过'], [0, '哈哈哈哈哈'],
+             [0, '你看那个视频没'], [1, '笑死我了'], [0, '作业写完没'], [1, '抄我的'], [0, '兄弟！'],
+             ['date', '2021年9月3日 23:10'], [0, '到新学校了吗'], [1, '到了，宿舍好小'], [0, '哈哈，有空视频'],
+             ['date', '2022年3月8日 20:15'], [1, '生日快乐！'], [0, '谢啦兄弟'],
+             ['date', '2023年1月22日 00:01'], [0, '新年快乐！'], [1, '新年快乐！'],
+             ['date', '2024年6月18日 21:03'], [0, '下次一起吃饭啊！'], [1, '好啊，一定。']];
+const NEW = () => [['date', '今天 23:47', D(16) - .3], [0, '在吗？突然想起你了。', D(16)], [0, '我下周就走了。走之前，一起吃个饭吧？', D(17)],
+                   [0, '这次，不许再说“下次”了。', D(18)], [1, '好。这次一定。', D(19) + .3], [0, '那就，老地方见。', D(20)]];
+function chatScreen(t, sx, sy, sw, sh, k, items, scroll, typed, cursor) {
+  ctx.save(); ctx.globalAlpha = k; ctx.beginPath(); ctx.roundRect(sx, sy, sw, sh, 34); ctx.clip();
+  ctx.fillStyle = '#151517'; ctx.fillRect(sx, sy, sw, sh);
+  // 从下往上排：最新的在最下面；scroll > 0 往上翻
+  const inputH = 84, bottom = sy + sh - inputH - 16; let hs = items.map(it => { ctx.save(); const hh = chatItem(it, sx, sw, -9999, 0); ctx.restore(); return hh; });
+  let y = bottom + scroll; for (let i = items.length - 1; i >= 0; i--) { y -= hs[i]; if (y < sy + 40 || y > bottom) { if (y > bottom) continue; } chatItem(items[i], sx, sw, y, 1); }
+  ctx.fillStyle = '#1d1d20'; ctx.fillRect(sx, sy, sw, 76); text('阿杰', sx + sw / 2, sy + 50, { font: SANS, size: 26, weight: 700, align: 'center', color: '#ececec' });
+  text('‹', sx + 30, sy + 52, { font: SANS, size: 40, weight: 500, color: '#ececec' });
+  ctx.fillStyle = '#1d1d20'; ctx.fillRect(sx, sy + sh - inputH, sw, inputH);
+  ctx.fillStyle = '#2b2b2f'; ctx.beginPath(); ctx.roundRect(sx + 18, sy + sh - inputH + 14, sw - 36, inputH - 30, 10); ctx.fill();
+  if (typed) text(typed, sx + 34, sy + sh - inputH / 2 + 4, { font: SANS, size: 24, weight: 500, color: '#ececec' });
+  if (cursor) { font(24, 500, SANS); const cw = typed ? ctx.measureText(typed).width : 0; ctx.fillStyle = '#56c27a'; ctx.fillRect(sx + 36 + cw, sy + sh - inputH / 2 - 14, 3, 30); }
+  ctx.restore();
+}
+function postScreen(sx, sy, sw, sh, k) {                                         // 朋友圈：阿杰要搬走了
+  ctx.save(); ctx.globalAlpha = k; ctx.beginPath(); ctx.roundRect(sx, sy, sw, sh, 34); ctx.clip();
+  ctx.fillStyle = '#151517'; ctx.fillRect(sx, sy, sw, sh); ctx.fillStyle = '#1d1d20'; ctx.fillRect(sx, sy, sw, 76); ctx.restore();
+  text('朋友圈', sx + sw / 2, sy + 50, { font: SANS, size: 26, weight: 700, align: 'center', color: '#ececec', alpha: k });
+  ctx.save(); ctx.globalAlpha = k; avatar('蓝卫衣男', sx + 22, sy + 104, 64); ctx.restore();
+  text('阿杰', sx + 102, sy + 126, { font: SANS, size: 27, weight: 700, color: '#8ea4cc', alpha: k });
+  text('下周就搬去深圳啦。', sx + 102, sy + 170, { font: SANS, size: 25, weight: 500, color: '#e6e6e8', alpha: k });
+  text('这座城市，再见了。', sx + 102, sy + 206, { font: SANS, size: 25, weight: 500, color: '#e6e6e8', alpha: k });
+  const im = PH.boxes; ctx.save(); ctx.globalAlpha = k; if (im.naturalWidth) ctx.drawImage(im, 0, 0, im.naturalWidth, im.naturalHeight, sx + 102, sy + 236, 300, 300); ctx.restore();
+  text('1小时前', sx + 102, sy + 572, { font: SANS, size: 19, weight: 500, color: '#7d8088', alpha: k });
+}
+function lockScreen(t, sx, sy, sw, sh, k) {                                     // 锁屏 + 通知
+  const lit = sstep(BUZZ(), BUZZ() + .15, t);
+  ctx.save(); ctx.globalAlpha = k; ctx.beginPath(); ctx.roundRect(sx, sy, sw, sh, 34); ctx.clip();
+  const g = ctx.createLinearGradient(0, sy, 0, sy + sh); g.addColorStop(0, '#1b2030'); g.addColorStop(1, '#0b0c12'); ctx.fillStyle = g; ctx.fillRect(sx, sy, sw, sh);
+  ctx.fillStyle = `rgba(0,0,0,${1 - lit})`; ctx.fillRect(sx, sy, sw, sh); ctx.restore();
+  text('23:47', sx + sw / 2, sy + 170, { font: SANS, size: 92, weight: 500, align: 'center', color: '#e8eaf0', alpha: k * lit });
+  text('10月26日 星期一', sx + sw / 2, sy + 222, { font: SANS, size: 22, weight: 500, align: 'center', color: '#b8bcc8', alpha: k * lit });
+  const nk = k * sstep(BUZZ() + .1, BUZZ() + .45, t), ny = sy + 280 - 20 * (1 - nk);
+  ctx.save(); ctx.globalAlpha = nk; ctx.fillStyle = 'rgba(60,62,70,.92)'; ctx.beginPath(); ctx.roundRect(sx + 18, ny, sw - 36, 108, 22); ctx.fill(); avatar('蓝卫衣男', sx + 36, ny + 22, 64); ctx.restore();
+  text('阿杰', sx + 116, ny + 44, { font: SANS, size: 24, weight: 700, color: '#f0f0f0', alpha: nk });
+  text('在吗？突然想起你了。', sx + 116, ny + 82, { font: SANS, size: 23, weight: 500, color: '#e0e0e4', alpha: nk });
+}
+function phone(t) {
+  const ins = insertAt(t); if (!ins || ins.k <= 0) return;
+  const { m, k } = ins;
+  ctx.save(); ctx.globalAlpha = .6 * k; ctx.fillStyle = '#000'; ctx.fillRect(FR.x, FR.y, FR.w, FR.h); ctx.restore();       // 插入镜头：后面压暗
+  const shake = m === 'lock' ? Math.sin(t * 90) * 5 * (win(t, BUZZ(), BUZZ() + .3, .02, .05) + win(t, BUZZ() + .45, BUZZ() + .75, .02, .05)) : 0;
+  const { sx, sy, sw, sh } = phoneFrame(k, shake);
+  if (m === 'night') {                                                           // 朋友圈 → 点进聊天，停在两年前
+    const toChat = sstep(DE(0) + .2, DE(0) + .5, t);
+    if (toChat < 1) postScreen(sx, sy, sw, sh, k * (1 - toChat));
+    if (toChat > 0) chatScreen(t, sx, sy, sw, sh, k * toChat, OLD, 0, '', Math.floor(t * 2) % 2 === 0);
+  } else if (m === 'scroll') {                                                   // 往上翻（以前一天一百条）→ 慢慢翻回来（一年一条）→ 打字、删掉
+    const up = E.io(prog(t, D(12) - .4, D(12) + 2.4)) * 760 * (1 - E.io(prog(t, D(13) + .2, DE(13))));
+    const type = (start, s) => { const n = Math.floor(clamp((t - start) / .16, 0, s.length)), hold = start + s.length * .16 + .3, del = Math.floor(clamp((t - hold) / .07, 0, s.length)); return t < start ? null : s.slice(0, Math.max(0, n - del)); };
+    let typed = ''; for (const [st, s] of [TYPE1(), TYPE2()]) { const r = type(st, s); if (r !== null) typed = r; }
+    const fade = 1 - sstep(SCREEN_OFF() - .6, SCREEN_OFF(), t);                                                  // 最后屏幕暗下去
+    chatScreen(t, sx, sy, sw, sh, k * Math.max(.25, fade), OLD, up, typed, Math.floor(t * 2.2) % 2 === 0);
+  } else if (m === 'lock') lockScreen(t, sx, sy, sw, sh, k);
+  else if (m === 'chat') {                                                       // 他先发来了：消息一条条冒出来
+    const items = OLD.concat(NEW().filter(it => t >= it[2]).map(it => it.slice(0, 2)));
+    const typing = t > D(19) - .9 && t < D(19) + .3 ? '好。这次一定。'.slice(0, Math.floor(clamp((t - D(19) + .9) / .12, 0, 7))) : '';
+    chatScreen(t, sx, sy, sw, sh, k, items, 0, typing, typing.length > 0);
+  }
+}
+
+// ---------------------------------------------------------------- 黑场转场 + 时间字卡
+function blackCards(t) {
+  const cards = [[S['六年前'], '六年前'], [S['现在'], '现在']];
+  for (const [s, label] of cards) {
+    const b = sstep(s - 1.0, s - .15, t) * (1 - sstep(s + .7, s + 1.4, t)); if (b <= 0) continue;
+    ctx.save(); ctx.globalAlpha = b; ctx.fillStyle = '#000'; ctx.fillRect(FR.x - 2, FR.y - 2, FR.w + 4, FR.h + 4); ctx.restore();
+    const ka = sstep(s - .3, s + .1, t) * (1 - sstep(s + .55, s + 1.0, t));
+    text(label, 540, FR.y + FR.h / 2 + 10, { font: SERIF, size: 64, weight: 700, align: 'center', color: CREAM, alpha: ka, ls: 12 });
+  }
+  const k0 = win(t, .4, 4.2, .5, .6);                                              // 开头：时间
+  text('晚上十一点半', 70, FR.y + 70, { font: SERIF, size: 34, weight: 500, color: CREAM, alpha: k0 * .9, ls: 4, glow: 'rgba(0,0,0,.9)', blur: 10 });
+}
+
+// ======================================================================== 世界层
+function WORLD(t) {
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  const sh = SHOTS.filter(s => t >= s.t0).pop() || SHOTS[0];                       // 换场在黑场里，直接切
+  const info = drawShot(sh, t);
+  ctx.save(); ctx.strokeStyle = 'rgba(236,230,218,.10)'; ctx.lineWidth = 2; ctx.strokeRect(FR.x - 1, FR.y - 1, FR.w + 2, FR.h + 2); ctx.restore();
+  ctx.save(); ctx.beginPath(); ctx.rect(FR.x, FR.y, FR.w, FR.h); ctx.clip(); phone(t); ctx.restore();
+  const me = info.cast.find(m => m.who === '黑');
+  // 对话框（消息不出对话框，在手机里）
+  DIALOG.forEach(([a, b, s, who, kind], i) => {
+    if (kind === 'msg') return;
+    const next = DIALOG[i + 1] ? DIALOG[i + 1][0] : TOTAL, fe = Math.max(b + .3, Math.min(b + .9, next - .05));
+    if (t < a - .1 || t > fe + .05) return;
+    const k = sstep(a - .1, a + .2, t) * (1 - sstep(fe - .3, fe, t));
+    if (who === '猫') { if (me) bubble(s, kind, me.cat[0], me.cat[1], k, 40); return; }
+    const m = info.cast.find(c => c.who === who), ins = insertAt(t);
+    if (m) bubble(s, kind, m.top[0], m.top[1], k, 34, !!ins && ins.k > .3);
+  });
+  blackCards(t);
+  // 画框上面的黑边：第一段是封面钩子；之后换成标题
+  const L = S['六年前'], hook = 1 - sstep(L - 1.0, L - .2, t), ttl = sstep(L + .6, L + 1.4, t);
+  text('两年没联系的老朋友，', 540, 270, { size: 62, weight: 900, align: 'center', color: CREAM, alpha: hook });
+  text('突然给我发来一句……', 540, 372, { size: 66, weight: 900, align: 'center', color: GOLD, alpha: hook });
+  text('很久没联系的老朋友', 540, 300, { font: SERIF, size: 58, weight: 900, align: 'center', color: GOLD, alpha: ttl });
+  text('你也有这样一个人吗', 540, 376, { font: SANS, size: 34, weight: 700, align: 'center', color: CREAM, alpha: ttl * .85 });
+  // 最后的字卡（画框下面）
+  const c1 = win(t, CARDS_AT, CARDS_AT + 4.2, .5, .5), c2 = sstep(CARDS_AT + 4.0, CARDS_AT + 4.6, t);
+  typeText('你是不是也有一个，', 540, 1530, { ...big, size: 54, weight: 900, color: CREAM }, prog(t, CARDS_AT, CARDS_AT + 1.0), c1);
+  typeText('很久没联系、却一直记得的人？', 540, 1625, { ...big, size: 56, weight: 900, color: GOLD, glow: `rgba(${O_RGB},.5)`, glowBlur: 26 }, prog(t, CARDS_AT + 1.1, CARDS_AT + 2.4), c1);
+  typeText('评论区说说：', 540, 1530, { size: 44, weight: 700, font: SERIF, align: 'center', color: CREAM, spread: 4 }, prog(t, CARDS_AT + 4.1, CARDS_AT + 4.6), c2);
+  typeText('你最想给谁发一句“在吗”？', 540, 1620, { size: 54, weight: 900, font: SERIF, align: 'center', color: GOLD, spread: 5, glow: `rgba(${O_RGB},.4)`, glowBlur: 16 }, prog(t, CARDS_AT + 4.5, CARDS_AT + 5.6), c2);
+}
+function SAMPLES(T) { return 2; }
+function BLOOM_K(T) { return .18; }
+function OVER(T) {}
+function MASTER(T) { return 1; }
+function INIT() {
+  const s1 = S['六年前'], s2 = S['现在'], HF = [400, 945], JF = [830, 950], MF = [320, 945];   // 主人公、阿杰（回忆里主人公在 320）脸的位置
+  SHOTS = [
+    { name: 'night', img: 'bedroom', t0: 0, crop: [200, 760, 1100] },
+    { name: 'court', img: 'court', t0: s1, crop: [0, 0, 1440] },
+    { name: 'now', img: 'bedroom', t0: s2, crop: [200, 760, 1100] },
+  ];
+  CAM_KEYS = [
+    // 深夜：空镜（远景）→ 他出现 → 朋友圈和聊天记录（插入镜头）→ 镜头慢慢推到脸上，留白
+    [0, 540, 950, 1.0], [DE(1) + 1.2, 540, 950, 1.0], [DE(3) + 1.6, HF[0], HF[1], 1.75],
+    // 六年前：两个人（中景）；“谁先不联系谁是小狗”切到阿杰；“幼稚”切回来；“怎么可能”切到主人公
+    [s1 - .01, HF[0], HF[1], 1.75], [s1, 540, 950, 1.0], [D(8) - .06, 540, 950, 1.0], [D(8) - .05, JF[0], JF[1], 1.45],
+    [D(9) - .06, JF[0], JF[1], 1.5], [D(9) - .05, 540, 950, 1.0], [D(11) - .06, 540, 950, 1.0], [D(11) - .05, MF[0], MF[1], 1.4], [s2 - .2, MF[0], MF[1], 1.5],
+    // 现在：中景，看手机；屏幕暗下去以后切近，慢慢推；“在吗？”之后看他的脸（特写）；最后拉远
+    [s2 - .01, MF[0], MF[1], 1.5], [s2, 470, 950, 1.12], [SCREEN_OFF() - .01, 470, 950, 1.12], [SCREEN_OFF(), HF[0], HF[1], 1.4], [BUZZ(), HF[0], HF[1], 1.55],
+    [DE(16) + .05, HF[0], HF[1], 1.55], [DE(16) + .06, HF[0], HF[1], 1.8], [D(17) - .5, HF[0], HF[1], 1.85],
+    [D(17) - .49, 470, 950, 1.12], [DE(20) + .6, 470, 950, 1.12], [DE(20) + .61, HF[0], HF[1], 1.3], [D(23) - .2, HF[0], HF[1], 1.5],
+    [CARDS_AT - .5, HF[0], HF[1], 1.5], [CARDS_AT + 3.5, 540, 950, 1.0], [TOTAL + 1, 540, 950, 1.0],
+  ];
+}
+
+// ======================================================================== 音效提示表
+function CUES() {
+  const c = [], s1 = S['六年前'], s2 = S['现在'];
+  // 深夜 / 现在：屋里很静，墙上的钟滴答滴答
+  c.push([0, 'room', { dur: s1 + .2, gain: 1.0, fi: .3, fo: .8 }], [s2 - .2, 'room', { dur: TOTAL - s2 + .2, gain: 1.0, fi: .8, fo: 1.5 }]);
+  for (let t = .6; t < TOTAL - 1; t += 1.0) if (t < s1 - .8 || t > s2 + .8) c.push([t, 'tick', { gain: .018 }]);
+  c.push([DE(0) + .25, 'tick', { gain: .04 }]);                                                          // 点进聊天
+  // 六年前：傍晚的球场，远处有人拍球，几声鸟叫
+  c.push([s1 + .3, 'birds', { dur: s2 - s1 - .8, gain: .05 }], [s1 + .3, 'chatter', { dur: s2 - s1 - .8, gain: .25, fi: 1.0, fo: 1.0 }]);
+  for (let t = s1 + .8; t < s2 - 1.2; t += .62 + (Math.round(t * 10) % 3) * .05) c.push([t, 'bounce', { gain: .45, pan: .4 }]);
+  // 现在：打字、删掉；屏幕暗了；手机一震；消息一条条进来；发送
+  const tap = (t0, n, dt, g) => { for (let i = 0; i < n; i++) c.push([t0 + i * dt, 'pop', { f: 1500 + (i % 3) * 120, gain: g }]); };
+  for (const [st, s] of [TYPE1(), TYPE2()]) { tap(st, s.length, .16, .12); tap(st + s.length * .16 + .3, s.length, .07, .08); }
+  c.push([BUZZ(), 'buzz', { gain: 1.0 }]);
+  for (const i of [17, 18, 20]) c.push([D(i), 'pop', { f: 900, gain: .25 }]);
+  tap(D(19) - .9, 7, .12, .12); c.push([D(19) + .3, 'swish', { dur: .35, gain: .04 }]);
+  c.push([CARDS_AT, 'shimmer', { f: [587.3, 740, 880, 1174.7], gain: .06 }]);
+  return c.sort((a, b) => a[0] - b[0]);
+}
+
+// ======================================================================== 字体、播放与导出接口
+let fontsReady = false;
+Promise.all([['900', SERIF], ['700', SERIF], ['500', SERIF], ['700', SANS], ['500', SANS], ['italic 500', LAT], ['italic 600', LAT], ['600', LAT]]
+  .map(([w, f]) => document.fonts.load(`${w} 40px ${f}`, '很久没联系的老朋友 Aa')))
+  .then(() => document.fonts.ready).then(() => { INIT(); fontsReady = true; render(0); });
+window.__ready = () => fontsReady && (typeof ASSETS_READY !== 'function' || ASSETS_READY());   // 照片这类素材（No.50 起）也要加载完
+window.__frame = (t, q = .95) => { render(t); return cv.toDataURL('image/jpeg', q); };
+window.__duration = () => TOTAL;
+window.__cues = () => ({ total: TOTAL, cues: typeof CUES === 'function' ? CUES() : CUES, sections: SECTIONS.map(([name, t0, t1]) => ({ name, t0, t1 })) });
+
+if (!EXPORT) {
+  const au = new Audio('audio.wav');
+  let playing = false, clock0 = 0, pausedAt = 0, useAudio = true;
+  const now = () => useAudio && !au.paused ? au.currentTime : playing ? (performance.now() - clock0) / 1000 : pausedAt;
+  function loop() { if (!playing) return; const T = now(); render(T); if (T >= TOTAL) { playing = false; pausedAt = 0; au.pause(); return; } requestAnimationFrame(loop); }
+  function play() { playing = true; clock0 = performance.now() - pausedAt * 1000; au.currentTime = pausedAt; au.play().catch(() => { useAudio = false; }); requestAnimationFrame(loop); }
+  function pause() { pausedAt = now(); playing = false; au.pause(); }
+  document.getElementById('stage').onclick = () => playing ? pause() : play();
+  addEventListener('keydown', e => {
+    if (e.code === 'Space') { e.preventDefault(); playing ? pause() : play(); }
+    if (e.code === 'ArrowRight' || e.code === 'ArrowLeft') { const t = clamp(now() + (e.code === 'ArrowRight' ? 5 : -5), 0, TOTAL); pausedAt = t; clock0 = performance.now() - t * 1000; au.currentTime = t; if (!playing) render(t); }
+  });
+} else document.getElementById('hint').remove();
+</script>
+</body>
+</html>
