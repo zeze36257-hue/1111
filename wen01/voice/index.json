@@ -1,0 +1,122 @@
+{
+ "00.mp3": {
+  "key": "072010523af6",
+  "tkey": "af0424974ed2",
+  "file": "00.mp3",
+  "start": 0.7,
+  "text": "年少的时候，总爱追着一个够不着的人跑。",
+  "who": "黑",
+  "kind": "vo",
+  "speed": 0.95,
+  "dur": 3.04,
+  "room": 3.34
+ },
+ "01.mp3": {
+  "key": "557818589063",
+  "tkey": "4ce75927083c",
+  "file": "01.mp3",
+  "start": 4.19,
+  "text": "明知道等不到回应，还是想再勇敢一次。",
+  "who": "黑",
+  "kind": "vo",
+  "speed": 0.95,
+  "dur": 2.94,
+  "room": 3.49
+ },
+ "02.mp3": {
+  "key": "2adf8fea136f",
+  "tkey": "5d28cad806fd",
+  "file": "02.mp3",
+  "start": 7.83,
+  "text": "后来，心上多了一道疤，",
+  "who": "黑",
+  "kind": "vo",
+  "speed": 0.95,
+  "dur": 2.37,
+  "room": 2.52
+ },
+ "03.mp3": {
+  "key": "f24d6a9a703f",
+  "tkey": "adcb3c0d84d1",
+  "file": "03.mp3",
+  "start": 10.5,
+  "text": "才慢慢明白：好的感情，不用那么用力。",
+  "who": "黑",
+  "kind": "vo",
+  "speed": 0.95,
+  "dur": 4.55,
+  "room": 5.2
+ },
+ "04.mp3": {
+  "key": "2a84c1defc64",
+  "tkey": "cb857af04f7a",
+  "file": "04.mp3",
+  "start": 15.85,
+  "text": "让你笑的，才叫爱；",
+  "who": "黑",
+  "kind": "vo",
+  "speed": 0.95,
+  "dur": 1.89,
+  "room": 1.99
+ },
+ "05.mp3": {
+  "key": "4870fbbc9d75",
+  "tkey": "febe2fa205b0",
+  "file": "05.mp3",
+  "start": 17.99,
+  "text": "让你哭的，只是路过。",
+  "who": "黑",
+  "kind": "vo",
+  "speed": 0.95,
+  "dur": 1.98,
+  "room": 2.63
+ },
+ "06.mp3": {
+  "key": "e6a9800f14b7",
+  "tkey": "1f0035170b6b",
+  "file": "06.mp3",
+  "start": 20.77,
+  "text": "别着急，慢慢走。",
+  "who": "黑",
+  "kind": "vo",
+  "speed": 0.95,
+  "dur": 1.72,
+  "room": 2.27
+ },
+ "07.mp3": {
+  "key": "d791a9063f67",
+  "tkey": "5b14d01342bd",
+  "file": "07.mp3",
+  "start": 23.19,
+  "text": "总会有一个人，喜欢你，也懂你，",
+  "who": "黑",
+  "kind": "vo",
+  "speed": 0.95,
+  "dur": 3.59,
+  "room": 3.74
+ },
+ "08.mp3": {
+  "key": "9c9c13df333f",
+  "tkey": "d7cdafd0ccb2",
+  "file": "08.mp3",
+  "start": 27.08,
+  "text": "笑着朝你跑来，牵起你的手，",
+  "who": "黑",
+  "kind": "vo",
+  "speed": 0.95,
+  "dur": 2.78,
+  "room": 2.93
+ },
+ "09.mp3": {
+  "key": "2854549b9d06",
+  "tkey": "8657e5040ca0",
+  "file": "09.mp3",
+  "start": 30.16,
+  "text": "陪你一起往前走。",
+  "who": "黑",
+  "kind": "vo",
+  "speed": 0.95,
+  "dur": 1.26,
+  "room": 3.69
+ }
+}

@@ -1,0 +1,6 @@
+{"no": "读文案01", "title": "让你笑的，才叫爱", "fullTitle": "让你笑的，才叫爱",
+ "next": "",
+ "intro": false,
+ "progress": false,
+ "voice": {"id": "Chinese (Mandarin)_Gentleman", "model": "speech-2.8-hd", "speed": 0.95},
+ "music": {"src": "bgm.wav", "segments": [[0, 400]], "fadeOut": 2.0}}
