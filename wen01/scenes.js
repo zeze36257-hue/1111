@@ -39,62 +39,72 @@ const SUBS = [
   [30.16, 31.42, '陪你一起往前走。'],
 ];
 // 镜头：[开始, 图]（一句配音一张图，比开口早一点点切）
-const CUTS = [[0.00, '01'], [4.07, '09'], [7.71, '01c'], [10.38, '06'], [15.73, '04'], [17.87, '08'], [20.65, '02'], [23.07, '05'], [26.96, '03'], [30.04, '07']];
+const CUTS = [[0.00, '08'], [7.71, '01'], [10.38, '06'], [15.73, '04'], [20.65, '02'], [23.07, '05'], [26.96, '03'], [30.04, '07']];
 // ======================================================================== 时间轴结束
 
 // ======================================================================== 读文案 01《让你笑的，才叫爱》
-// 新格式的第一条样片：频道主的文案（改写过）+ 温润男声配音；一句配音一张图（频道主用 GPT 做的成图，在 characters/读文案/图/），
-// 字幕是白色特粗字加黑边，跟着配音一截一截冒出来；上面的黑边左上角是一对橙青的猫眼 + “黑猫不说话”。没有片头、没有进度条，片尾和水印保留。
+// 新格式的样片：频道主的文案（改写过）+ 温润男声；一句配音一张图（频道主用 GPT 做的成图，在 characters/读文案/图/），
+// 背景音乐是频道主选的 TRA$H《Memories》。
+// 第二版（11 月 1 日频道主的意见）：
+//   - 图按原来的比例整张放，不裁、不做特写；缩放几乎没有（一个镜头放大 1.2%）；不用 09（沙发看手机）。
+//   - 边框重做：整屏是这张图放大、糊掉、压暗的底；图放在中间，圆角、细白边、底下一点投影；
+//     图上面左上角是一对橙青的猫眼 + “黑猫不说话”。
+// 字幕：白色特粗字加黑边，跟着配音一截一截出来。没有片头、没有进度条，片尾和水印保留。
 const WHITE = '#ffffff';
 document.fonts.load('900 60px "Noto Sans SC"', '让你笑的才叫爱');
 
 // ======================================================================== 图
-const FR = { x: 0, y: 240, w: 1080, h: 1440 }, CX = FR.x + FR.w / 2;
 const DIR = '../characters/读文案/图/';
 const FILES = { '01': '01_他_回头_黑白.png', '02': '02_两个人_火车上大笑.png', '03': '03_两个人_夕阳下牵手跑.png', '04': '04_两个人_自拍吐舌头.png',
-  '05': '05_两个人_海边骑车.png', '06': '06_两个人_长椅靠肩.png', '07': '07_两个人_傍晚牵手.png', '08': '08_他_过马路挥手.png', '09': '09_他_沙发看手机.png' };
-// 每个镜头怎么取景：图、看哪里（图里的比例位置）、从多大推到多大（1 = 刚好盖满画框）；fy1：竖着慢慢移到哪
-const LOOK = {
-  '01': { img: '01', fx: .5, fy: .36, z0: 1.0, z1: 1.06 },
-  '09': { img: '09', fx: .5, fy: .45, z0: 1.0, z1: 1.07 },
-  '01c': { img: '01', fx: .46, fy: .27, z0: 1.9, z1: 2.05 },                   // 01 的脸部特写
-  '06': { img: '06', fx: .42, fy: .42, z0: 1.0, z1: 1.08 },
-  '04': { img: '04', fx: .5, fy: .36, z0: 1.0, z1: 1.06 },
-  '08': { img: '08', fx: .5, fy: .42, z0: 1.0, z1: 1.07 },
-  '02': { img: '02', fx: .5, fy: .4, z0: 1.0, z1: 1.06 },
-  '05': { img: '05', fx: .5, fy: .26, fy1: .5, z0: 1.0, z1: 1.0 },              // 竖图：从她张开的手慢慢移到他骑车
-  '03': { img: '03', fx: .5, fy: .5, z0: 1.0, z1: 1.07 },
-  '07': { img: '07', fx: .6, fy: .5, z0: 1.0, z1: 1.06 },                 // 他在右边只露半张脸，往右偏一点
-};
+  '05': '05_两个人_海边骑车.png', '06': '06_两个人_长椅靠肩.png', '07': '07_两个人_傍晚牵手.png', '08': '08_他_过马路挥手.png' };
 const IMG = {};
 for (const [k, f] of Object.entries(FILES)) { const im = new Image(); im.src = DIR + f; IMG[k] = im; }
 function ASSETS_READY() { return Object.values(IMG).every(im => im.complete && im.naturalWidth > 0) && document.fonts.check('900 60px "Noto Sans SC"', '爱'); }
 
-// 盖满画框画一张图：z 在“刚好盖满”的基础上再放大，(fx, fy) 是画框中心对着图里的哪一点
-function cover(im, fx, fy, z) {
-  const iw = im.naturalWidth, ih = im.naturalHeight; if (!iw) return;
-  const s = Math.max(FR.w / iw, FR.h / ih) * z, sw = FR.w / s, sh = FR.h / s;
-  const sx = clamp(fx * iw - sw / 2, 0, iw - sw), sy = clamp(fy * ih - sh / 2, 0, ih - sh);
-  ctx.drawImage(im, sx, sy, sw, sh, FR.x, FR.y, FR.w, FR.h);
+// 图最大占多大：宽 1000、高 1500（2:3），中心在 (540, 985)；别的比例的图按原比例放进这个框里（不裁）
+const BOX = { cx: 540, cy: 985, w: 1000, h: 1500 }, ZOOM = .012, RADIUS = 26;
+function card(id) {                                                         // 这张图在屏幕上的位置和大小
+  const im = IMG[id], a = im.naturalWidth / im.naturalHeight, w = Math.min(BOX.w, BOX.h * a), h = w / a;
+  return { x: BOX.cx - w / 2, y: BOX.cy - h / 2, w, h };
+}
+const BG = {};
+function backdrop(id) {                                                     // 整屏的底：这张图放大、糊掉、压暗（只算一次）
+  if (!BG[id]) {
+    const c = mk(W / 4, H / 4), g = c.getContext('2d'), im = IMG[id], s = Math.max(c.width / im.naturalWidth, c.height / im.naturalHeight) * 1.15;
+    g.filter = 'blur(10px) brightness(.42) saturate(.9)';
+    g.drawImage(im, (c.width - im.naturalWidth * s) / 2, (c.height - im.naturalHeight * s) / 2, im.naturalWidth * s, im.naturalHeight * s);
+    BG[id] = c;
+  }
+  ctx.save(); ctx.imageSmoothingQuality = 'high'; ctx.drawImage(BG[id], 0, 0, W, H); ctx.restore();
+}
+function photo(id, k) {                                                     // 圆角、细白边、投影；里面几乎不缩放
+  const im = IMG[id], r = card(id), z = 1 + ZOOM * k;
+  ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.55)'; ctx.shadowBlur = 40; ctx.shadowOffsetY = 14;
+  ctx.fillStyle = '#000'; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, RADIUS); ctx.fill(); ctx.restore();
+  ctx.save(); ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, RADIUS); ctx.clip();
+  ctx.translate(r.x + r.w / 2, r.y + r.h / 2); ctx.scale(z, z); ctx.drawImage(im, -r.w / 2, -r.h / 2, r.w, r.h); ctx.restore();
+  ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,.22)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.roundRect(r.x + 1, r.y + 1, r.w - 2, r.h - 2, RADIUS - 1); ctx.stroke(); ctx.restore();
+  return r;
 }
 function shotAt(t) { let i = 0; for (let k = 0; k < CUTS.length; k++) if (t >= CUTS[k][0]) i = k; return i; }
 
 // ======================================================================== 字幕：一截一截出来，每个字出来时轻轻弹一下
-const SUB = { y: FR.y + FR.h * .74, size: 62, stroke: 11 };
-function subtitle(t) {
+const SUB = { size: 62, stroke: 11 };
+function subtitle(t, r) {
+  const y = r.y + r.h * .76;
   SUBS.forEach(([a, b, s], i) => {
     const next = SUBS[i + 1] ? SUBS[i + 1][0] : TOTAL - .6;
     if (t < a || t >= next) return;
     const str = s.replace(/[，：；。！？]$/, ''), chars = [...str], n = chars.length;
     font(SUB.size, 900, SANS); ctx.letterSpacing = '1px';
     const ws = chars.map(c => ctx.measureText(c).width + 1), total = ws.reduce((x, y) => x + y, 0) - 1;
-    let x = CX - total / 2;
+    let x = 540 - total / 2;
     const span = Math.max(.25, (b - a) * .9), fade = 1 - sstep(next - .12, next, t) * (i + 1 === SUBS.length ? 1 : 0);
     chars.forEach((c, k) => {
       const at = a + span * k / n, p = clamp((t - at) / .09);
       if (p > 0) {
         const sc = 1 + .28 * (1 - E.out(p));
-        ctx.save(); ctx.translate(x + ws[k] / 2, SUB.y); ctx.scale(sc, sc); ctx.globalAlpha = p * fade;
+        ctx.save(); ctx.translate(x + ws[k] / 2, y); ctx.scale(sc, sc); ctx.globalAlpha = p * fade;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
         ctx.shadowColor = 'rgba(0,0,0,.45)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 4;
         ctx.strokeStyle = '#000'; ctx.lineWidth = SUB.stroke; ctx.strokeText(c, 0, 0);
@@ -106,26 +116,26 @@ function subtitle(t) {
   });
 }
 
-// ======================================================================== 画框上面：一对橙青的猫眼 + 黑猫不说话
-function brand() {
-  const y = FR.y - 68;
-  ctx.save(); ctx.fillStyle = ORANGE; ctx.beginPath(); ctx.arc(72, y, 11, 0, TAU); ctx.fill();
-  ctx.fillStyle = TEAL; ctx.beginPath(); ctx.arc(104, y, 11, 0, TAU); ctx.fill(); ctx.restore();
-  text('黑猫不说话', 130, y + 1, { font: SANS, size: 36, weight: 500, color: CREAM, ls: 2 });
+// ======================================================================== 图上面：一对橙青的猫眼 + 黑猫不说话
+function brand(r) {
+  const x = Math.max(r.x, 40) + 8, y = Math.min(r.y, BOX.cy - BOX.h / 2) - 44;
+  ctx.save(); ctx.fillStyle = ORANGE; ctx.beginPath(); ctx.arc(x + 10, y, 10, 0, TAU); ctx.fill();
+  ctx.fillStyle = TEAL; ctx.beginPath(); ctx.arc(x + 38, y, 10, 0, TAU); ctx.fill(); ctx.restore();
+  text('黑猫不说话', x + 62, y + 1, { font: SANS, size: 34, weight: 500, color: CREAM, ls: 3, glow: 'rgba(0,0,0,.6)', blur: 10 });
 }
 
 // ======================================================================== 一帧
 function INIT() {}
 function WORLD(t) {
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
-  const i = shotAt(t), [t0, id] = CUTS[i], t1 = CUTS[i + 1] ? CUTS[i + 1][0] : TOTAL, L = LOOK[id];
-  const k = E.ioSine(clamp((t - t0) / (t1 - t0))), z = lerp(L.z0, L.z1, k), fy = L.fy1 != null ? lerp(L.fy, L.fy1, k) : L.fy;
-  ctx.save(); ctx.beginPath(); ctx.rect(FR.x, FR.y, FR.w, FR.h); ctx.clip(); cover(IMG[L.img], L.fx, fy, z); ctx.restore();
-  brand();
-  subtitle(t);
+  const i = shotAt(t), [t0, id] = CUTS[i], t1 = CUTS[i + 1] ? CUTS[i + 1][0] : TOTAL;
+  backdrop(id);
+  const r = photo(id, E.ioSine(clamp((t - t0) / (t1 - t0))));
+  brand(r);
+  subtitle(t, r);
 }
 function SAMPLES(T) { return 1; }
-function BLOOM_K(T) { return .08; }
+function BLOOM_K(T) { return .06; }
 function OVER(T) {}
 function MASTER(T) { return 1; }
 function CUES() { return []; }
