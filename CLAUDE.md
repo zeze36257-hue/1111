@@ -161,6 +161,23 @@
     - **背景音乐用 TRA$H《Memories》**：`music/memories_trash_30s.m4a`，频道主发来的 30 秒。
       - 不够长就按 6.4 秒的乐句往后接（`wen01/music.py`）。
       - 完整版不从网上的非正规来源下载，要频道主自己从正规渠道给。
+  - **11 月 1 日频道主又提的要求**（看了第二版；还没做进视频，下一条照这个做）：
+    - **不要片尾**：`meta.json` 写 `"outro": false`（`tools/make_cine.sh` 已经支持）。
+    - **不要第二版的边框**（糊掉的底、圆角、细白边、投影都不要），回到第一版那样：
+      - 黑底，图放中间，左上角上方一对橙青的猫眼 + “黑猫不说话”；
+      - 图还是按原比例整张放、不裁：2:3 的图宽 1080、高 1620；别的比例按原比例缩进这个框。
+    - **配音换声音**：频道主在挑。试听在 `refs/读文案/声音试听.mp3`，9 个声音，依次是：
+      1. 温润男声（现在用的）`Chinese (Mandarin)_Gentleman`
+      2. 抒情男声 `Chinese (Mandarin)_Lyrical_Voice`
+      3. 电台男主播 `Chinese (Mandarin)_Radio_Host`
+      4. 温润青年 `Chinese (Mandarin)_Gentle_Youth`
+      5. 真诚青年 `Chinese (Mandarin)_Sincere_Adult`
+      6. 俊朗男友 `junlang_nanyou`
+      7. 冷淡学长 `lengdan_xiongzhang`
+      8. 温柔学姐 `Chinese (Mandarin)_Gentle_Senior`
+      9. 阅历姐姐 `Chinese (Mandarin)_Wise_Women`
+      - 都是 0.95 倍速。
+    - 他选好声音之前先不做视频。
   - 剖析、还没定的事见 `refs/读文案/剖析.md`。
 
 ## 怎么出一期（详见各期 README.md）
