@@ -1,0 +1,7 @@
+{"no": "读文案03", "title": "你也不用做完美的人", "fullTitle": "你也不用做完美的人",
+ "next": "",
+ "intro": false,
+ "outro": false,
+ "progress": false,
+ "voice": {"id": "Chinese (Mandarin)_Gentleman", "model": "speech-2.8-hd", "speed": 0.95},
+ "music": {"src": "bgm.wav", "segments": [[0, 400]], "fadeOut": 2.0}}
