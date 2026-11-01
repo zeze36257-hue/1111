@@ -166,18 +166,9 @@
     - **不要第二版的边框**（糊掉的底、圆角、细白边、投影都不要），回到第一版那样：
       - 黑底，图放中间，左上角上方一对橙青的猫眼 + “黑猫不说话”；
       - 图还是按原比例整张放、不裁：2:3 的图宽 1080、高 1620；别的比例按原比例缩进这个框。
-    - **配音换声音**：频道主在挑。试听在 `refs/读文案/声音试听.mp4`（手机预览不了 mp3，做成了带字的视频；音频也在同名 .mp3），9 个声音，依次是：
-      1. 温润男声（现在用的）`Chinese (Mandarin)_Gentleman`
-      2. 抒情男声 `Chinese (Mandarin)_Lyrical_Voice`
-      3. 电台男主播 `Chinese (Mandarin)_Radio_Host`
-      4. 温润青年 `Chinese (Mandarin)_Gentle_Youth`
-      5. 真诚青年 `Chinese (Mandarin)_Sincere_Adult`
-      6. 俊朗男友 `junlang_nanyou`
-      7. 冷淡学长 `lengdan_xiongzhang`
-      8. 温柔学姐 `Chinese (Mandarin)_Gentle_Senior`
-      9. 阅历姐姐 `Chinese (Mandarin)_Wise_Women`
-      - 都是 0.95 倍速。
-    - 他选好声音之前先不做视频。
+    - **配音还是用温润男声** `Chinese (Mandarin)_Gentleman`（0.95 倍速）：
+      - 11 月 1 日给他试听了 9 个声音（`refs/读文案/声音试听.mp4`），他选回原来的。
+    - 他说音乐下载好了会发来（存进 `music/`），还做了一批新图会发来；都收到以后再做下一条。
   - 剖析、还没定的事见 `refs/读文案/剖析.md`。
 
 ## 怎么出一期（详见各期 README.md）
