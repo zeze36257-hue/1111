@@ -20,5 +20,12 @@
 
 ## 出片
 ```
-NODE_PATH=$(npm root -g) tools/make_cine.sh wen03 读文案第二期_你也不用做完美的人.mp4
+NODE_PATH=$(npm root -g) tools/make_cine.sh wen03 读文案第二期_你也不用做完美的人_无配乐.mp4
 ```
+
+## 11 月 2 日起不带背景音乐
+频道主发布时在抖音曲库里自己加《Memories》，所以成片只留配音：
+- `meta.json` 写 `"music": {"off": true}`；
+- 文件名后面加了“_无配乐”。
+- 原来带音乐的那版还在 git 历史里。
+

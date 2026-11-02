@@ -2,7 +2,7 @@
 
     python tools/cine/audio.py <episode-dir>
 
-Reads <episode-dir>/meta.json ("music": {"src", "segments": [[from, to], ...], "fadeOut"}) and
+Reads <episode-dir>/meta.json ("music": {"src", "segments": [[from, to], ...], "fadeOut"}, or {"off": true} for no music) and
 <episode-dir>/cues.json (written by `node export.cjs --cues cues.json`), and writes <episode-dir>/audio.wav.
 
 Music: the listed segments of the source track are joined back to back (a short fade at each join, so a cut
@@ -29,19 +29,23 @@ def decode(path):
     return np.frombuffer(raw, dtype=np.float32).reshape(-1, 2).astype(np.float64)
 
 
-src = decode(os.path.join(ep, meta['music']['src']))
-parts = []
-for i, (a, b) in enumerate(meta['music']['segments']):
-    seg = src[int(a * SR):int(b * SR)].copy()
-    fi, fo = int(.03 * SR), int(.06 * SR)
-    if i > 0: seg[:fi] *= np.linspace(0, 1, fi)[:, None]
-    if i < len(meta['music']['segments']) - 1: seg[-fo:] *= np.linspace(1, 0, fo)[:, None]
-    parts.append(seg)
-lead = int(meta['music'].get('lead', 0) * SR)                      # 音乐前面留空（开头只有音效）
-music = np.concatenate([np.zeros((lead, 2))] + parts)[:N]
-if len(music) < N: music = np.pad(music, ((0, N - len(music)), (0, 0)))
-fo = int(meta['music'].get('fadeOut', 3) * SR)
-music[-fo:] *= (np.linspace(1, 0, fo) ** 1.6)[:, None]
+MUS = meta.get('music') or {}
+if MUS.get('off') or not MUS.get('src'):                           # 不要背景音乐（读文案 11 月 2 日起：频道主发布时在抖音曲库里加）
+    music = np.zeros((N, 2))
+else:
+    src = decode(os.path.join(ep, MUS['src']))
+    parts = []
+    for i, (a, b) in enumerate(MUS['segments']):
+        seg = src[int(a * SR):int(b * SR)].copy()
+        fi, fo = int(.03 * SR), int(.06 * SR)
+        if i > 0: seg[:fi] *= np.linspace(0, 1, fi)[:, None]
+        if i < len(MUS['segments']) - 1: seg[-fo:] *= np.linspace(1, 0, fo)[:, None]
+        parts.append(seg)
+    lead = int(MUS.get('lead', 0) * SR)                      # 音乐前面留空（开头只有音效）
+    music = np.concatenate([np.zeros((lead, 2))] + parts)[:N]
+    if len(music) < N: music = np.pad(music, ((0, N - len(music)), (0, 0)))
+    fo = int(MUS.get('fadeOut', 3) * SR)
+    music[-fo:] *= (np.linspace(1, 0, fo) ** 1.6)[:, None]
 
 
 # ------------------------------------------------------------------ sound effects
