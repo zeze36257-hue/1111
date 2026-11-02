@@ -1,0 +1,98 @@
+{
+ "00.mp3": {
+  "key": "ba235a609f0c",
+  "tkey": "7cddee858cf1",
+  "file": "00.mp3",
+  "start": 0.6,
+  "text": "我死在了婚礼那天。",
+  "who": "她悲",
+  "kind": "say",
+  "speed": 0.88,
+  "dur": 2.24,
+  "room": 2.99
+ },
+ "01.mp3": {
+  "key": "5539a5916b93",
+  "tkey": "df5e625687c5",
+  "file": "01.mp3",
+  "start": 3.74,
+  "text": "推我下去的，是我爱了七年的人。",
+  "who": "她悲",
+  "kind": "say",
+  "speed": 0.88,
+  "dur": 4.86,
+  "room": 6.01
+ },
+ "02.mp3": {
+  "key": "172c18e1e48c",
+  "tkey": "468c2823ab46",
+  "file": "02.mp3",
+  "start": 9.9,
+  "text": "再睁开眼——",
+  "who": "她惊",
+  "kind": "say",
+  "speed": 0.92,
+  "dur": 0.87,
+  "room": 1.42
+ },
+ "03.mp3": {
+  "key": "27e4f4085e45",
+  "tkey": "528ac0d7efea",
+  "file": "03.mp3",
+  "start": 11.47,
+  "text": "手机上的日期，是三年前。",
+  "who": "她惊",
+  "kind": "say",
+  "speed": 0.92,
+  "dur": 2.64,
+  "room": 3.39
+ },
+ "04.mp3": {
+  "key": "6a22632a671f",
+  "tkey": "fa370afb18cb",
+  "file": "04.mp3",
+  "start": 15.01,
+  "text": "我……回来了？",
+  "who": "她怕",
+  "kind": "say",
+  "speed": 0.85,
+  "dur": 2.64,
+  "room": 5.19
+ },
+ "05.mp3": {
+  "key": "bbfc86680069",
+  "tkey": "6bd7df0a179d",
+  "file": "05.mp3",
+  "start": 20.35,
+  "text": "醒了吗？晚上见一面吧，我有话想跟你说。",
+  "who": "他",
+  "kind": "say",
+  "speed": 0.95,
+  "dur": 3.01,
+  "room": 3.66
+ },
+ "06.mp3": {
+  "key": "635c2aa5311e",
+  "tkey": "bd68a524bbab",
+  "file": "06.mp3",
+  "start": 24.16,
+  "text": "上辈子，就是今晚，他向我求了婚。",
+  "who": "她冷",
+  "kind": "say",
+  "speed": 0.85,
+  "dur": 4.91,
+  "room": 5.66
+ },
+ "07.mp3": {
+  "key": "b974a75922d7",
+  "tkey": "09d48f04f23c",
+  "file": "07.mp3",
+  "start": 29.97,
+  "text": "这一次——",
+  "who": "她冷",
+  "kind": "say",
+  "speed": 0.85,
+  "dur": 1.07,
+  "room": 7.18
+ }
+}

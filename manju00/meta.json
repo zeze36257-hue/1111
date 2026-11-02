@@ -1,0 +1,14 @@
+{"no": "漫剧00", "title": "这一次，我不嫁了", "fullTitle": "这一次，我不嫁了",
+ "next": "",
+ "intro": false,
+ "outro": false,
+ "progress": false,
+ "voice": {"id": "female-yujie-jingpin", "model": "speech-2.8-hd", "speed": 0.9},
+ "voices": {
+  "她悲": {"id": "female-yujie-jingpin", "model": "speech-2.8-hd", "speed": 0.88, "emotion": "sad"},
+  "她惊": {"id": "female-yujie-jingpin", "model": "speech-2.8-hd", "speed": 0.92, "emotion": "surprised"},
+  "她怕": {"id": "female-yujie-jingpin", "model": "speech-2.8-hd", "speed": 0.85, "emotion": "fearful", "say": {"……": "<#0.4#>"}},
+  "她冷": {"id": "female-yujie-jingpin", "model": "speech-2.8-hd", "speed": 0.85, "emotion": "calm"},
+  "他": {"id": "male-qn-jingying-jingpin", "model": "speech-2.8-hd", "speed": 0.95, "emotion": "happy"}
+ },
+ "music": {"off": true}}

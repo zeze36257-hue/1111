@@ -1,0 +1,554 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>这一次，我不嫁了</title>
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>
+  :root { --bg: #000; }
+  html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; }
+  #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  canvas { height: 100vh; width: 56.25vh; max-width: 100vw; max-height: 177.78vw; background: #000; display: block; }
+  #hint { position: fixed; left: 0; right: 0; bottom: 16px; text-align: center; color: #888; font: 14px "Noto Sans SC", sans-serif; }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c" width="1080" height="1920"></canvas></div>
+<div id="hint">点击播放 / 暂停 · ← → 快退快进</div>
+<script>
+// 黑猫不说话 · 心理学 No.漫剧00《这一次，我不嫁了》
+// 电影感引擎（第三季起）：连续镜头、形变转场、逐字浮现的字幕、动态模糊、泛光与胶片颗粒。
+// 每一帧仍是时间 T 的纯函数：实时预览与逐帧导出（?export=1）画出的是同一帧。
+'use strict';
+// ======================================================================== 基础
+const W = 1080, H = 1920, FPS = 30, SHUTTER = .5;                 // 180° 快门：每帧曝光半个帧间隔
+const EXPORT = /[?&]export=1/.test(location.search);
+const cv = document.getElementById('c'), OUT = cv.getContext('2d');
+const mk = (w, h) => Object.assign(document.createElement('canvas'), { width: w, height: h });
+const LAYER = mk(W, H), LCTX = LAYER.getContext('2d');          // 动态模糊：子帧先画在这里，再平均到 OUT
+const BLOOM = mk(W / 4, H / 4), BCTX = BLOOM.getContext('2d');   // 泛光：缩小、提亮部、模糊后叠回去
+let ctx = OUT;
+
+const PI = Math.PI, TAU = PI * 2;
+const clamp = (x, a = 0, b = 1) => x < a ? a : x > b ? b : x;
+const lerp = (a, b, t) => a + (b - a) * t;
+const prog = (t, a, b) => clamp((t - a) / (b - a));
+const sstep = (a, b, x) => { const t = prog(x, a, b); return t * t * (3 - 2 * t); };
+const win = (t, a, b, fi = .5, fo = .5) => sstep(a, a + fi, t) * (1 - sstep(b - fo, b, t));
+const E = {
+  lin: t => clamp(t),
+  io: t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; },
+  out: t => 1 - Math.pow(1 - clamp(t), 3),
+  in: t => Math.pow(clamp(t), 3),
+  outQuint: t => 1 - Math.pow(1 - clamp(t), 5),
+  outExpo: t => (t = clamp(t)) >= 1 ? 1 : 1 - Math.pow(2, -10 * t),
+  inExpo: t => (t = clamp(t)) <= 0 ? 0 : Math.pow(2, 10 * t - 10),
+  ioExpo: t => { t = clamp(t); return t <= 0 ? 0 : t >= 1 ? 1 : t < .5 ? Math.pow(2, 20 * t - 10) / 2 : (2 - Math.pow(2, -20 * t + 10)) / 2; },
+  ioSine: t => -(Math.cos(PI * clamp(t)) - 1) / 2,
+};
+// 关键帧轨道：[[t, v, ease?], …]，ease 作用于从这一帧到下一帧的那一段（默认三次缓入缓出）
+function track(keys) {
+  return T => {
+    if (T <= keys[0][0]) return keys[0][1];
+    for (let i = 0; i < keys.length - 1; i++) {
+      const [a, va, e] = keys[i], [b, vb] = keys[i + 1];
+      if (T < b) return lerp(va, vb, (e || E.io)((T - a) / (b - a)));
+    }
+    return keys[keys.length - 1][1];
+  };
+}
+function mulberry(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function hash2(i, j) { let h = Math.imul(i, 374761393) + Math.imul(j, 668265263) | 0; h = Math.imul(h ^ h >>> 13, 1274126177); return ((h ^ h >>> 16) >>> 0) / 4294967296; }
+function vnoise(x, y) {
+  const i = Math.floor(x), j = Math.floor(y), fx = x - i, fy = y - j, u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
+  return lerp(lerp(hash2(i, j), hash2(i + 1, j), u), lerp(hash2(i, j + 1), hash2(i + 1, j + 1), u), v);
+}
+function fbm(x, y, o = 4) { let s = 0, a = .5, f = 1, n = 0; for (let k = 0; k < o; k++) { s += a * vnoise(x * f, y * f); n += a; f *= 2.03; a *= .5; } return s / n; }
+
+const SERIF = '"Noto Serif SC", serif', SANS = '"Noto Sans SC", sans-serif', LAT = '"Cormorant Garamond", serif';
+const ORANGE = '#f2a14a', TEAL = '#4fd6c4', CREAM = '#ece6da', DIM = '#8a93a3';
+const O_RGB = '242,161,74', T_RGB = '79,214,196', C_RGB = '236,230,218';
+
+function reset(c) {
+  c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 1; c.globalCompositeOperation = 'source-over'; c.filter = 'none';
+  c.shadowBlur = 0; c.shadowColor = 'rgba(0,0,0,0)'; c.letterSpacing = '0px'; c.setLineDash([]); c.lineCap = 'butt'; c.lineJoin = 'miter';
+}
+
+// ======================================================================== 基础绘制
+function font(size, weight = 500, fam = SERIF, style = '') { ctx.font = `${style} ${weight} ${size}px ${fam}`; }
+function text(s, x, y, o = {}) {
+  if ((o.alpha ?? 1) <= 0) return;
+  ctx.save();
+  font(o.size || 44, o.weight || 500, o.font || SERIF, o.style || '');
+  ctx.textAlign = o.align || 'left'; ctx.textBaseline = o.base || 'middle';
+  ctx.globalAlpha *= o.alpha ?? 1; ctx.letterSpacing = (o.ls || 0) + 'px';
+  if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = o.blur ?? 20; }
+  if (o.filter) ctx.filter = o.filter;
+  ctx.fillStyle = o.color || CREAM; ctx.fillText(s, x, y);
+  ctx.restore();
+}
+// 发光的点：外圈光晕 + 实心核
+function glow(x, y, r, rgb, a = 1, halo = 5) {
+  if (a <= 0 || r <= 0) return;
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const R = r * halo, g = ctx.createRadialGradient(x, y, 0, x, y, R);
+  g.addColorStop(0, `rgba(${rgb},${.55 * a})`); g.addColorStop(.25, `rgba(${rgb},${.18 * a})`); g.addColorStop(1, `rgba(${rgb},0)`);
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, R, 0, TAU); ctx.fill();
+  ctx.restore();
+  ctx.save(); ctx.globalAlpha *= a; ctx.fillStyle = `rgb(${rgb})`; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); ctx.restore();
+}
+function seg(x1, y1, x2, y2, col, lw = 2, a = 1) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a; ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore();
+}
+
+// ======================================================================== 文字：逐字浮现
+// 「」里的字用高亮色
+function runs(s) { const r = []; let hi = false; for (const ch of s) { if (ch === '「') { hi = true; continue; } if (ch === '」') { hi = false; continue; } r.push({ ch, hi }); } return r; }
+function advances(rs, o) { font(o.size, o.weight || 500, o.font || SERIF, o.style || ''); ctx.letterSpacing = '0px'; return rs.map(c => ctx.measureText(c.ch).width + (o.ls || 0)); }
+const runWidth = (rs, o) => advances(rs, o).reduce((a, b) => a + b, 0) - (o.ls || 0);
+// p：0 → 1 的出现进度；每个字从模糊、偏下、透明变清晰，前后重叠 spread 个字
+function typeRun(rs, x, y, o, p, alpha = 1) {
+  if (alpha <= 0 || p <= 0) return;
+  const adv = advances(rs, o), total = adv.reduce((a, b) => a + b, 0) - (o.ls || 0);
+  let cx = o.align === 'center' ? x - total / 2 : o.align === 'right' ? x - total : x;
+  const n = rs.length, sp = o.spread ?? 6;
+  ctx.save(); ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = o.glowBlur ?? 24; }
+  for (let i = 0; i < n; i++) {
+    const e = E.out(clamp((p * (n + sp) - i) / sp));
+    if (e > 0) {
+      ctx.globalAlpha = alpha * e;
+      const b = (1 - e) * (o.blur ?? 10);
+      ctx.filter = b > .4 ? `blur(${b.toFixed(1)}px)` : 'none';
+      ctx.fillStyle = rs[i].hi ? (o.hi || ORANGE) : (o.color || CREAM);
+      ctx.fillText(rs[i].ch, cx, y + (1 - e) * (o.rise ?? 22));
+    }
+    cx += adv[i];
+  }
+  ctx.restore();
+}
+const typeText = (s, x, y, o, p, alpha) => typeRun(runs(s), x, y, o, p, alpha);
+
+// 断行：放得下就一行；否则两行，优先在标点后断、取最均衡的位置；不拆英文单词和数字
+const PUNCT = '，、：；。？！——…';
+function wrapRuns(rs, o, max) {
+  const wid = a => runWidth(a, o);
+  if (wid(rs) <= max) return [rs];
+  let best = -1, bd = 1e9;
+  rs.forEach((c, i) => {
+    if (!PUNCT.includes(c.ch) || i === rs.length - 1) return;
+    const a = wid(rs.slice(0, i + 1)), b = wid(rs.slice(i + 1));
+    if (a <= max && b <= max && Math.abs(a - b) < bd) { bd = Math.abs(a - b); best = i + 1; }
+  });
+  if (best < 0) rs.forEach((c, i) => {
+    if (i === 0 || PUNCT.includes(c.ch) || /\w\w/.test(rs[i - 1].ch + c.ch)) return;
+    const a = wid(rs.slice(0, i)), b = wid(rs.slice(i));
+    if (a <= max && b <= max && Math.abs(a - b) < bd) { bd = Math.abs(a - b); best = i; }
+  });
+  return best > 0 ? [rs.slice(0, best), rs.slice(best)] : [rs];
+}
+
+// ======================================================================== 字幕（无配音，字幕就是旁白）
+// 左下角衬线字，逐字浮现；离场时轻轻上浮淡出。位置避开 TikTok 底部文案和右侧按钮。
+const NARR = { x: 96, y: 1436, lh: 68, max: 880, size: 46, weight: 500, font: SERIF, ls: 2, spread: 7, rise: 14, blur: 8 };
+const WRAP_CACHE = new Map();
+function narration(T) {
+  let shade = 0;
+  for (const [a, b] of LINES) shade = Math.max(shade, win(T, a - .4, b + .6, .5, .6));
+  if (shade > 0) {
+    const g = ctx.createLinearGradient(0, 1250, 0, 1620); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(.5, `rgba(0,0,0,${.42 * shade})`); g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 1250, W, 370);
+  }
+  LINES.forEach(([a, b, s], k) => {
+    const next = LINES[k + 1] ? LINES[k + 1][0] : Infinity, fe = Math.max(b + .15, Math.min(b + .6, next - .05));   // 下一句开始之前淡出完，两句不叠在一起
+    if (T < a || T > fe + .1) return;
+    if (!WRAP_CACHE.has(s)) WRAP_CACHE.set(s, wrapRuns(runs(s), NARR, NARR.max));
+    const lines = WRAP_CACHE.get(s);
+    const fade = 1 - sstep(b, fe, T), drift = -16 * E.in(prog(T, b, fe + .1));
+    const n = lines.reduce((k, l) => k + l.length, 0), dur = Math.min(1.2, .3 + n * .03);
+    lines.forEach((ln, i) => {
+      const t0 = a + i * .22;
+      typeRun(ln, NARR.x, NARR.y + (i - (lines.length - 1)) * NARR.lh + drift, { ...NARR, glow: 'rgba(0,0,0,.9)', glowBlur: 14 }, prog(T, t0, t0 + dur), fade);
+    });
+  });
+}
+
+// ======================================================================== 右上角的年份 / 出处
+function stamp(s, sub, t0, t1, T) {
+  const a = win(T, t0, t1, .7, .7); if (a <= 0) return;
+  const e = E.outExpo(prog(T, t0, t0 + 1.4));
+  text(s, W - 96 + (1 - e) * 40, 412, { font: LAT, weight: 600, size: 56, align: 'right', alpha: a * .95, ls: 4 });
+  if (sub) text(sub, W - 96 + (1 - e) * 70, 462, { font: LAT, style: 'italic', weight: 500, size: 29, align: 'right', color: DIM, alpha: a });
+}
+
+// ======================================================================== 顶部分段进度条
+// 放在 TikTok 顶部“关注 / 推荐”栏之下（y = 336）。当前段落橙色，头部带一颗发光的点；段落名切换时上下交替。
+const PB = { y: 336, x0: 96, x1: 984, gap: 12 };
+function progress(T, a = 1) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a;
+  const span = PB.x1 - PB.x0 - PB.gap * (SECTIONS.length - 1);
+  let x = PB.x0, cur = 0;
+  SECTIONS.forEach(([, s0, s1], i) => {
+    const w = span * (s1 - s0) / TOTAL, f = clamp((T - s0) / (s1 - s0)); if (T >= s0) cur = i;
+    ctx.fillStyle = 'rgba(255,255,255,.14)'; ctx.fillRect(x, PB.y - 1, w, 2);
+    if (f > 0) {
+      ctx.fillStyle = f < 1 ? ORANGE : 'rgba(236,230,218,.7)'; ctx.fillRect(x, PB.y - 1, w * f, 2);
+      if (f < 1) glow(x + w * f, PB.y, 3.2, O_RGB, 1, 5);
+    }
+    x += w + PB.gap;
+  });
+  SECTIONS.forEach(([name, s0], i) => {
+    const s1 = SECTIONS[i + 1] ? SECTIONS[i + 1][1] : TOTAL + 9;
+    const k = (i ? sstep(s0, s0 + .45, T) : 1) * (1 - sstep(s1 - .45, s1, T)); if (k <= 0) return;
+    const e = i ? sstep(s0, s0 + .45, T) : 1, y = PB.y - 34 + (1 - e) * 10 - 10 * sstep(s1 - .45, s1, T);
+    text(`${String(i + 1).padStart(2, '0')}   ${name}`, PB.x0, y, { size: 27, weight: 500, color: CREAM, alpha: .88 * k, ls: 4 });
+  });
+  text(`${String(cur + 1).padStart(2, '0')} / ${String(SECTIONS.length).padStart(2, '0')}`, PB.x1, PB.y - 34, { font: LAT, weight: 600, size: 30, color: DIM, align: 'right', ls: 2 });
+  ctx.restore();
+}
+
+// ======================================================================== 水印
+// 低透明度、缓慢漂移，活动范围避开进度条和字幕
+const WM = '@黑猫不说话';
+function watermark(T, a = 1) {
+  const x = 540 + Math.sin(T * TAU / 47 + 1.1) * 210 + Math.sin(T * TAU / 83 + 1) * 50;
+  const y = 860 + Math.sin(T * TAU / 61 + 1.3) * 300;
+  text(WM, x, y, { font: SANS, weight: 500, size: 30, align: 'center', color: '#ffffff', alpha: .16 * a, ls: 2 });
+}
+
+// ======================================================================== 后期：泛光、暗角、颗粒
+const GRAIN = (() => {
+  const c = mk(256, 256), g = c.getContext('2d'), im = g.createImageData(256, 256), r = mulberry(3);
+  for (let i = 0; i < im.data.length; i += 4) { const v = r() * 255; im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 255; }
+  g.putImageData(im, 0, 0); return c;
+})();
+function bloom(k) {
+  if (k <= 0) return;
+  reset(BCTX); BCTX.globalCompositeOperation = 'copy'; BCTX.filter = 'brightness(.9) contrast(2.4) blur(5px)';
+  BCTX.drawImage(cv, 0, 0, W / 4, H / 4);
+  OUT.save(); OUT.globalCompositeOperation = 'screen'; OUT.globalAlpha = k; OUT.imageSmoothingQuality = 'high'; OUT.drawImage(BLOOM, 0, 0, W, H); OUT.restore();
+}
+// 暗、昏黄的调色（No.53 起频道主要的主色调）：把画好的一块区域拷出来，加滤镜（偏棕、降饱和、压暗）再画回去，
+// 叠一层琥珀色（乘法：白的变成暖米色，暗部更暗），四周再压一圈暗角。只调画面（照片 + 人物），对话框和字不调。
+const GRADE = mk(W, H), GCTX = GRADE.getContext('2d');
+function warmGrade(x, y, w, h, k = 1, o = {}) {
+  if (k <= 0) return;
+  GCTX.setTransform(1, 0, 0, 1, 0, 0); GCTX.globalCompositeOperation = 'copy'; GCTX.filter = 'none'; GCTX.globalAlpha = 1;
+  GCTX.drawImage(ctx.canvas, x, y, w, h, x, y, w, h);
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+  ctx.globalAlpha = k; ctx.filter = `sepia(${o.sepia ?? .4}) saturate(${o.sat ?? .82}) brightness(${o.bright ?? .8}) contrast(${o.contrast ?? 1.06})`;
+  ctx.drawImage(GRADE, x, y, w, h, x, y, w, h); ctx.filter = 'none';
+  ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = o.tint || 'rgb(255,218,165)'; ctx.fillRect(x, y, w, h);
+  ctx.globalCompositeOperation = 'source-over';
+  const v = ctx.createRadialGradient(x + w / 2, y + h * .48, Math.min(w, h) * .35, x + w / 2, y + h * .48, Math.max(w, h) * .78);
+  v.addColorStop(0, 'rgba(20,12,4,0)'); v.addColorStop(1, `rgba(20,12,4,${o.vig ?? .55})`); ctx.fillStyle = v; ctx.fillRect(x, y, w, h);
+  ctx.restore();
+}
+function grade(T, vig = .62, grain = .07) {
+  const v = ctx.createRadialGradient(W / 2, H * .46, H * .26, W / 2, H * .46, H * .82);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, `rgba(0,0,0,${vig})`); ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+  const f = Math.floor(T * FPS), ox = (f * 97) % 256, oy = (f * 61) % 256;
+  ctx.save(); ctx.globalAlpha = grain; ctx.globalCompositeOperation = 'overlay';
+  ctx.fillStyle = ctx.createPattern(GRAIN, 'repeat'); ctx.translate(-ox, -oy); ctx.fillRect(0, 0, W + 256, H + 256); ctx.restore();
+}
+
+// ======================================================================== 一帧
+// 剧集提供：TOTAL、SECTIONS、LINES、CUES、INIT()、WORLD(t)、SAMPLES(T)、OVER(T)、MASTER(T)
+function render(T) {
+  T = clamp(T, 0, TOTAL - 1e-4);
+  const n = Math.max(1, SAMPLES(T) | 0);
+  reset(OUT);
+  for (let k = 0; k < n; k++) {
+    const t = n === 1 ? T : T + (k / (n - 1) - .5) * SHUTTER / FPS;
+    ctx = n === 1 ? OUT : LCTX; reset(ctx); ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+    WORLD(t);
+    if (n > 1) { reset(OUT); OUT.globalAlpha = 1 / (k + 1); OUT.drawImage(LAYER, 0, 0); }
+  }
+  ctx = OUT; reset(OUT);
+  bloom(BLOOM_K(T)); reset(OUT);
+  grade(T); reset(OUT);
+  OVER(T); reset(OUT);
+  narration(T); reset(OUT);
+  const m = MASTER(T);
+  watermark(T, m); if (SHOW_PROGRESS) progress(T, m); reset(OUT);
+  const dark = sstep(TOTAL - .9, TOTAL, T);                         // 第一帧就是封面，不做淡入；结尾淡出接片尾
+  if (dark > 0) { OUT.fillStyle = `rgba(0,0,0,${dark})`; OUT.fillRect(0, 0, W, H); }
+}
+
+const SHOW_PROGRESS = false;
+// ======================================================================== 时间轴（layout.py 生成，别手改）
+const TOTAL = 37.3;
+const SECTIONS = [['漫剧', 0, TOTAL]];
+const LINES = [];
+const DIALOG = [
+  [0.60, 2.94, '我死在了婚礼那天。', '她悲', 'say'],
+  [3.74, 8.70, '推我下去的，是我爱了七年的人。', '她悲', 'say'],
+  [9.90, 10.87, '再睁开眼——', '她惊', 'say'],
+  [11.47, 14.21, '手机上的日期，是三年前。', '她惊', 'say'],
+  [15.01, 17.75, '我……回来了？', '她怕', 'say'],
+  [20.35, 23.46, '醒了吗？晚上见一面吧，我有话想跟你说。', '他', 'say'],
+  [24.16, 29.17, '上辈子，就是今晚，他向我求了婚。', '她冷', 'say'],
+  [29.97, 31.14, '这一次——', '她冷', 'say'],
+];
+const SUBS = [
+  [0.60, 2.84, '我死在了婚礼那天。'],
+  [3.74, 8.60, '推我下去的，是我爱了七年的人。'],
+  [9.90, 10.77, '再睁开眼——'],
+  [11.47, 14.11, '手机上的日期，是三年前。'],
+  [15.01, 17.65, '我……回来了？'],
+  [20.35, 23.36, '醒了吗？晚上见一面吧，我有话想跟你说。'],
+  [24.16, 29.07, '上辈子，就是今晚，他向我求了婚。'],
+  [29.97, 31.04, '这一次——'],
+];
+const SHOTS = [[0.00, 'bride'], [3.64, 'groom'], [9.80, 'eyes'], [11.37, 'lock'], [14.91, 'bed'], [18.55, 'call'], [20.25, 'ear'], [24.06, 'smile'], [32.24, 'title']];
+// ======================================================================== 时间轴结束
+
+// ======================================================================== 漫剧样片《这一次，我不嫁了》第 1 集开头
+// 给频道主看“我做的 AI 漫剧能到什么效果”。整屏竖画面（不是读文案那种黑边框）。
+// 画面：MiniMax 生成的韩漫风插画（img/）；手机锁屏、来电、片名是这里画的。
+// 镜头：慢推、仰拍往上摇、心跳时画面一缩一放、雨、闪电、白光、黑场、睁眼、手机插入镜头、来电震动、推到脸上、片名砸出来。
+const WHITE = '#ffffff', PHONE_BLUE = '#bfe2ff', RED = '#d6403a';
+document.fonts.load('900 60px "Noto Sans SC"', '我死在了婚礼那天推下去的是爱七年人再睁开眼手机上日期三前回来醒吗晚见一面吧有话想跟你说辈子就今他向求婚这次');
+document.fonts.load('900 150px "Noto Serif SC"', '这一次我不嫁了');
+document.fonts.load('300 210px "Noto Sans SC"', '07:30');
+document.fonts.load('500 44px "Noto Sans SC"', '2023年6月12日星期一顾言手机拒绝接听第集下预告订婚宴她当众撕了的面具关注看一');
+
+const IMG = {};
+for (const k of ['bride', 'groom', 'eyes', 'bed', 'ear', 'smile']) { const im = new Image(); im.src = 'img/' + k + '.jpg'; IMG[k] = im; }
+function ASSETS_READY() { return Object.values(IMG).every(im => im.complete && im.naturalWidth > 0) && document.fonts.check('900 60px "Noto Sans SC"', '我'); }
+
+const T0 = id => SHOTS.find(s => s[1] === id)[0];
+const T1 = id => { const i = SHOTS.findIndex(s => s[1] === id); return SHOTS[i + 1] ? SHOTS[i + 1][0] : TOTAL; };
+const shotAt = t => { let i = 0; for (let k = 0; k < SHOTS.length; k++) if (t >= SHOTS[k][0]) i = k; return SHOTS[i]; };
+const SUB_OF = s => SUBS.find(r => r[2] === s);
+
+// 整屏铺满画一张图：z 放大倍数，(fx, fy) 屏幕中心对着图里的哪一点，dx/dy 再挪一点
+function cover(im, z = 1, fx = .5, fy = .5, dx = 0, dy = 0) {
+  const iw = im.naturalWidth, ih = im.naturalHeight, s = Math.max(W / iw, H / ih) * z, w = iw * s, h = ih * s;
+  const x = clamp(W / 2 - fx * w + dx, W - w, 0), y = clamp(H / 2 - fy * h + dy, H - h, 0);
+  ctx.imageSmoothingQuality = 'high'; ctx.drawImage(im, x, y, w, h);
+}
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+
+// 雨：斜着落下的细线
+function rain(t, a = 1, n = 180) {
+  ctx.save(); ctx.strokeStyle = '#d6e8ff'; ctx.lineCap = 'round';
+  for (let i = 0; i < n; i++) {
+    const r1 = hash2(i, 1), r2 = hash2(i, 2), r3 = hash2(i, 3), sp = 2100 + r3 * 900, len = 50 + r2 * 90;
+    const y = ((r2 * (H + 300) + t * sp) % (H + 300)) - 150, x = r1 * (W + 400) - 200 - (y + 150) * .16;
+    ctx.globalAlpha = (.12 + .28 * r3) * a; ctx.lineWidth = 1.2 + 1.6 * r3;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + len * .16, y - len); ctx.stroke();
+  }
+  ctx.restore();
+}
+function veil(color, a) { if (a <= 0) return; ctx.save(); ctx.globalAlpha = clamp(a); ctx.fillStyle = color; ctx.fillRect(0, 0, W, H); ctx.restore(); }
+
+// 心跳：画面一缩一放（开头两下“咚、咚”）
+const BEATS = [.15, .55, 2.35, 2.75];
+const beat = t => BEATS.reduce((s, b) => s + (t >= b ? Math.exp(-(t - b) / .12) : 0), 0);
+
+// ======================================================================== 手机
+const PH = { w: 760, h: 1540 };
+function phone(t, draw, shake = 0) {
+  ctx.save(); ctx.filter = 'blur(20px) brightness(.42)'; cover(IMG.bed, 1.2, .5, .5); ctx.restore();
+  const k = E.out(clamp((t - shotAt(t)[0]) / .45)), px = (W - PH.w) / 2 + shake, py = (H - PH.h) / 2 - 30 + (1 - k) * 90;
+  ctx.save(); ctx.globalAlpha = k;
+  ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.65)'; ctx.shadowBlur = 70; ctx.fillStyle = '#0a0a0c'; rr(px - 20, py - 20, PH.w + 40, PH.h + 40, 96); ctx.fill(); ctx.restore();
+  ctx.save(); rr(px, py, PH.w, PH.h, 78); ctx.clip(); draw(px, py, PH.w, PH.h); ctx.restore();
+  ctx.fillStyle = '#000'; rr(W / 2 - 100 + shake, py + 28, 200, 58, 29); ctx.fill();               // 灵动岛
+  ctx.restore();
+}
+function wallpaper(x, y, w, h) {
+  const g = ctx.createLinearGradient(x, y, x + w * .4, y + h); g.addColorStop(0, '#2a3350'); g.addColorStop(.55, '#4b3a5e'); g.addColorStop(1, '#141826');
+  ctx.fillStyle = g; ctx.fillRect(x, y, w, h);
+  ctx.save(); ctx.globalAlpha = .25; ctx.filter = 'blur(30px)'; ctx.fillStyle = '#e6a6b8'; ctx.beginPath(); ctx.arc(x + w * .7, y + h * .3, 200, 0, TAU); ctx.fill(); ctx.restore();
+}
+function lockScreen(t, x, y, w, h) {
+  wallpaper(x, y, w, h);
+  const cx = x + w / 2, hl = sstep(SUB_OF('手机上的日期，是三年前。')[1] - .9, SUB_OF('手机上的日期，是三年前。')[1] - .45, t);   // 说到“三年前”时，年份变红
+  ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  font(44, 500, SANS); ctx.fillStyle = 'rgba(255,255,255,.9)';
+  const date = '2023年6月12日 星期一', yr = '2023年', wAll = ctx.measureText(date).width, wYr = ctx.measureText(yr).width;
+  ctx.textAlign = 'left'; const dx = cx - wAll / 2, dy = y + 250;
+  ctx.fillText(date, dx, dy);
+  if (hl > 0) {
+    ctx.save(); ctx.globalAlpha = hl; ctx.fillStyle = '#ff6b5e'; ctx.shadowColor = 'rgba(255,80,60,.9)'; ctx.shadowBlur = 24; ctx.fillText(yr, dx, dy); ctx.restore();
+    ctx.save(); ctx.globalAlpha = hl; ctx.strokeStyle = '#ff6b5e'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(dx, dy + 34); ctx.lineTo(dx + wYr * hl, dy + 34); ctx.stroke(); ctx.restore();
+  }
+  ctx.textAlign = 'center'; font(210, 300, SANS); ctx.fillStyle = 'rgba(255,255,255,.95)'; ctx.fillText('07:30', cx, y + 420);
+  font(34, 500, SANS); ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.fillText('向上轻扫以解锁', cx, y + h - 90);
+  ctx.restore();
+}
+function callScreen(t, x, y, w, h) {
+  ctx.save(); ctx.filter = 'blur(26px) brightness(.55)'; ctx.drawImage(IMG.groom, x - 60, y - 60, w + 120, h + 120); ctx.restore();
+  const cx = x + w / 2;
+  ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(255,255,255,.18)'; ctx.beginPath(); ctx.arc(cx, y + 330, 92, 0, TAU); ctx.fill();
+  font(84, 500, SANS); ctx.fillStyle = '#fff'; ctx.fillText('顾', cx, y + 330);
+  font(78, 500, SANS); ctx.fillText('顾言', cx, y + 500);
+  font(36, 500, SANS); ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.fillText('手机', cx, y + 570);
+  const by = y + h - 260, pulse = 1 + .06 * Math.sin((t - shotAt(t)[0]) * 9);
+  [[cx - 190, '#ff453a', '拒绝', 1], [cx + 190, '#30d158', '接听', pulse]].forEach(([bx, c, s, sc]) => {
+    ctx.save(); ctx.translate(bx, by); ctx.scale(sc, sc); ctx.fillStyle = c; ctx.beginPath(); ctx.arc(0, 0, 76, 0, TAU); ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 9; ctx.lineCap = 'round'; ctx.rotate(s === '拒绝' ? 2.36 : 0);   // 听筒
+    ctx.beginPath(); ctx.arc(0, 8, 30, PI * 1.15, PI * 1.85); ctx.stroke(); ctx.restore();
+    font(34, 500, SANS); ctx.fillStyle = '#fff'; ctx.fillText(s, bx, by + 125);
+  });
+  ctx.restore();
+}
+
+// ======================================================================== 字幕：整句出来，轻轻浮起；长句在逗号处折成两行
+const SUB = { y: 1420, size: 60, stroke: 11 };
+function subtitle(t) {
+  for (const [a, b, s] of SUBS) {
+    if (t < a - .05 || t > b + .55) continue;
+    const k = E.out(clamp((t - a + .05) / .25)) * (1 - sstep(b + .3, b + .55, t));
+    const who = DIALOG.find(r => r[2] === s)[3], color = who === '他' ? PHONE_BLUE : WHITE;
+    let str = s.replace(/[，。！？]$/, '');
+    font(SUB.size, 900, SANS); ctx.letterSpacing = '2px';
+    let rows = [str];
+    if (ctx.measureText(str).width > 940) { const m = str.indexOf('，', Math.floor(str.length / 3)); rows = [str.slice(0, m + 1), str.slice(m + 1)]; }
+    rows.forEach((r, i) => {
+      const y = SUB.y + (i - (rows.length - 1) / 2) * 80 + (1 - k) * 16;
+      ctx.save(); ctx.globalAlpha = k; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
+      ctx.shadowColor = 'rgba(0,0,0,.55)'; ctx.shadowBlur = 14; ctx.shadowOffsetY = 4;
+      ctx.strokeStyle = '#000'; ctx.lineWidth = SUB.stroke; ctx.strokeText(r.replace(/，$/, ''), W / 2, y);
+      ctx.shadowColor = 'rgba(0,0,0,0)'; ctx.fillStyle = color; ctx.fillText(r.replace(/，$/, ''), W / 2, y); ctx.restore();
+    });
+  }
+}
+
+// ======================================================================== 片名
+function titleCard(t) {
+  const t0 = T0('title'), u = t - t0;
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  const k = E.outExpo(clamp(u / .22)), sc = lerp(1.35, 1, k), shake = u < .35 ? (hash2(Math.floor(u * 60), 7) - .5) * 18 * (1 - u / .35) : 0;
+  ctx.save(); ctx.translate(W / 2 + shake, 860); ctx.scale(sc, sc); ctx.globalAlpha = clamp(u / .08);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  font(54, 500, SANS); ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.letterSpacing = '12px'; ctx.fillText('第 1 集', 0, -250);
+  font(150, 900, SERIF); ctx.letterSpacing = '6px'; ctx.fillStyle = '#fff';
+  ctx.shadowColor = 'rgba(214,64,58,.55)'; ctx.shadowBlur = 40; ctx.fillText('这一次，', -60, -80); ctx.fillText('我不嫁了', 40, 110);
+  ctx.restore();
+  const k2 = E.out(clamp((u - .25) / .5));                                               // 红色的一道
+  ctx.save(); ctx.fillStyle = RED; ctx.globalAlpha = .9; ctx.fillRect(W / 2 - 300, 1080, 600 * k2, 10); ctx.restore();
+  const a3 = E.out(clamp((u - 1.6) / .6)), a4 = E.out(clamp((u - 2.8) / .6));
+  text('下集预告｜订婚宴上，她当众撕下了他的面具', W / 2, 1250 + (1 - a3) * 14, { font: SANS, size: 40, weight: 500, color: CREAM, align: 'center', alpha: a3, ls: 2 });
+  font(40, 700, SANS); ctx.letterSpacing = '4px'; const fw = ctx.measureText('关注我，看下一集').width, fx0 = W / 2 + 26 - fw / 2;   // 猫眼放在字的左边，不压字
+  ctx.save(); ctx.globalAlpha = a4;
+  [[fx0 - 56, ORANGE], [fx0 - 26, TEAL]].forEach(([x, c]) => { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, 1400, 10, 0, TAU); ctx.fill(); });
+  ctx.restore();
+  text('关注我，看下一集', W / 2 + 26, 1401, { font: SANS, size: 40, weight: 700, color: '#fff', align: 'center', alpha: a4, ls: 4 });
+}
+
+// ======================================================================== 一帧
+function INIT() {}
+function WORLD(t) {
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  const [s0, id] = shotAt(t), s1 = T1(id), p = clamp((t - s0) / (s1 - s0)), tF = T0('eyes');
+  if (id === 'bride') {                                                                  // 雨夜里的新娘：慢慢推近；心跳时一缩一放
+    const z = lerp(1.1, 1.17, E.ioSine(p)) + .014 * beat(t);
+    cover(IMG.bride, z, .5, .45); rain(t, 1);
+    veil('#000', .18 * beat(t));
+  } else if (id === 'groom') {                                                           // 仰拍：从下往上摇；一进来先打一道闪电
+    const u = t - s0;
+    cover(IMG.groom, lerp(1.06, 1.14, E.ioSine(p)), .5, lerp(.62, .44, E.ioSine(p)));
+    rain(t, 1.1);
+    const fl = Math.max(0, 1 - Math.abs(u - .05) / .06) * .9 + Math.max(0, 1 - Math.abs(u - .22) / .05) * .6;
+    veil('#e8f0ff', fl);
+    veil('#fff', sstep(tF - .5, tF - .04, t));                                           // 白光
+  } else if (id === 'eyes') {                                                            // 黑场一下，然后“睁眼”：上下眼皮张开，画面从糊到清楚
+    const u = t - s0, o = clamp((u - .3) / .7);
+    ctx.save(); ctx.filter = `blur(${(1 - E.out(o)) * 22}px)`; cover(IMG.eyes, lerp(1.18, 1.1, E.out(o)) + .03 * p, .5, .42); ctx.restore();
+    if (o < 1) {
+      const g = H * .62 * E.out(o);
+      ctx.save(); ctx.fillStyle = '#000'; ctx.shadowColor = '#000'; ctx.shadowBlur = 60;
+      ctx.beginPath(); ctx.moveTo(-50, -50); ctx.lineTo(W + 50, -50); ctx.lineTo(W + 50, H / 2 - g * .7); ctx.quadraticCurveTo(W / 2, H / 2 - g * 1.3, -50, H / 2 - g * .7); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(-50, H + 50); ctx.lineTo(W + 50, H + 50); ctx.lineTo(W + 50, H / 2 + g * .7); ctx.quadraticCurveTo(W / 2, H / 2 + g * 1.3, -50, H / 2 + g * .7); ctx.fill();
+      ctx.restore();
+    }
+    veil('#000', 1 - clamp(u / .3) * 0 - (u < .3 ? 0 : 1));                              // 前 0.3 秒全黑
+  } else if (id === 'lock') {
+    phone(t, (x, y, w, h) => lockScreen(t, x, y, w, h), Math.sin(t * 2.1) * 3);
+  } else if (id === 'bed') {                                                             // 早上的房间：慢推，光有点晃眼
+    cover(IMG.bed, lerp(1.03, 1.12, E.ioSine(p)), .5, .45);
+    const lk = .18 + .06 * Math.sin(t * 1.7);
+    ctx.save(); ctx.globalCompositeOperation = 'screen'; const g = ctx.createRadialGradient(W * .75, H * .2, 50, W * .75, H * .2, 900);
+    g.addColorStop(0, `rgba(255,236,200,${lk})`); g.addColorStop(1, 'rgba(255,236,200,0)'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); ctx.restore();
+  } else if (id === 'call') {                                                            // 来电：手机一震一震
+    const u = t - s0, buzzing = (u > .1 && u < .4) || (u > .55 && u < .85) || (u > .9 && u < 1.2) || (u > 1.35 && u < 1.65);
+    phone(t, (x, y, w, h) => callScreen(t, x, y, w, h), buzzing ? Math.sin(t * 150) * 7 : 0);
+  } else if (id === 'ear') {
+    cover(IMG.ear, lerp(1.04, 1.1, E.ioSine(p)), .5, .42);
+  } else if (id === 'smile') {                                                           // 推到她脸上；说到“这一次”时画面变冷
+    const cold = sstep(SUB_OF('这一次——')[0] - .2, SUB_OF('这一次——')[0] + .6, t);
+    cover(IMG.smile, lerp(1.0, 1.22, E.io(p)), .5, lerp(.45, .33, E.io(p)));
+    ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.globalAlpha = .45 * cold; ctx.fillStyle = '#7d9cc4'; ctx.fillRect(0, 0, W, H); ctx.restore();
+    veil('#000', .25 * cold);
+  } else if (id === 'title') {
+    titleCard(t);
+  }
+  if (id !== 'title') subtitle(t);
+}
+function SAMPLES(T) { return 1; }
+function BLOOM_K(T) { const id = shotAt(T)[1]; return id === 'bed' || id === 'smile' || id === 'eyes' ? .12 : .08; }
+function OVER(T) {}
+function MASTER(T) { return 1; }
+
+// ======================================================================== 音效（没有配乐：雨、心跳、闪电、白光、睁眼的一口气、早上的鸟、手机、片名的重击）
+function CUES() {
+  const tF = T0('eyes'), c = [];
+  c.push([0, 'rain', { dur: tF + .05, fi: .25, fo: .05, gain: .55 }]);
+  BEATS.forEach(b => c.push([b, 'thud', { gain: .75 }]));
+  c.push([T0('groom') + .03, 'boom', { deep: 1, gain: .6 }]);
+  c.push([T0('groom') + 1.2, 'drone', { dur: tF - T0('groom') - 1.3, gain: .32 }]);
+  c.push([tF - 1.3, 'riser', { dur: 1.25, gain: .45 }]);
+  c.push([tF - .05, 'impact', { gain: .8 }]);
+  c.push([tF + .02, 'stop', { gain: .35 }]);
+  c.push([tF + .3, 'breath', { dur: .7, heavy: .9, gain: .7 }]);
+  c.push([tF + .5, 'birds', { dur: T0('call') - tF - .3, gain: .28 }]);
+  c.push([T0('lock') + .05, 'click', { gain: .5 }]);
+  c.push([SUB_OF('手机上的日期，是三年前。')[1] - .85, 'tone', { dur: 2.2, f: 987.8, gain: .35 }]);
+  c.push([T0('bed') - .1, 'swell', { dur: 2.2, f: [146.83, 220.0, 293.66, 349.23, 440.0], gain: .32 }]);
+  c.push([T0('call') + .1, 'buzz', { gain: .7 }]);
+  c.push([T0('call') + .9, 'buzz', { gain: .7 }]);
+  c.push([T0('ear') - .05, 'click', { gain: .45 }]);
+  c.push([T0('smile') + 1.0, 'swell', { dur: 3.5, f: [130.81, 196.0, 261.63, 311.13, 392.0], gain: .3 }]);
+  c.push([SUB_OF('这一次——')[0] - .9, 'drone', { dur: 1.0, gain: .3 }]);
+  c.push([SUB_OF('这一次——')[1] + .25, 'stop', { gain: .3 }]);
+  c.push([T0('title') + .01, 'impact', { gain: .95 }]);
+  c.push([T0('title') + .01, 'boom', { deep: 1, gain: .55 }]);
+  c.push([T0('title') + .2, 'tone', { dur: 3.0, f: 659.26, gain: .25 }]);
+  c.push([T0('title') + 2.8, 'tink', { f: 1318.5, gain: .3 }]);
+  return c;
+}
+
+// ======================================================================== 字体、播放与导出接口
+let fontsReady = false;
+Promise.all([['900', SERIF], ['700', SERIF], ['500', SERIF], ['700', SANS], ['500', SANS], ['italic 500', LAT], ['italic 600', LAT], ['600', LAT]]
+  .map(([w, f]) => document.fonts.load(`${w} 40px ${f}`, '这一次，我不嫁了 Aa')))
+  .then(() => document.fonts.ready).then(() => { INIT(); fontsReady = true; render(0); });
+window.__ready = () => fontsReady && (typeof ASSETS_READY !== 'function' || ASSETS_READY());   // 照片这类素材（No.50 起）也要加载完
+window.__frame = (t, q = .95) => { render(t); return cv.toDataURL('image/jpeg', q); };
+window.__duration = () => TOTAL;
+window.__cues = () => ({ total: TOTAL, cues: typeof CUES === 'function' ? CUES() : CUES, sections: SECTIONS.map(([name, t0, t1]) => ({ name, t0, t1 })) });
+
+if (!EXPORT) {
+  const au = new Audio('audio.wav');
+  let playing = false, clock0 = 0, pausedAt = 0, useAudio = true;
+  const now = () => useAudio && !au.paused ? au.currentTime : playing ? (performance.now() - clock0) / 1000 : pausedAt;
+  function loop() { if (!playing) return; const T = now(); render(T); if (T >= TOTAL) { playing = false; pausedAt = 0; au.pause(); return; } requestAnimationFrame(loop); }
+  function play() { playing = true; clock0 = performance.now() - pausedAt * 1000; au.currentTime = pausedAt; au.play().catch(() => { useAudio = false; }); requestAnimationFrame(loop); }
+  function pause() { pausedAt = now(); playing = false; au.pause(); }
+  document.getElementById('stage').onclick = () => playing ? pause() : play();
+  addEventListener('keydown', e => {
+    if (e.code === 'Space') { e.preventDefault(); playing ? pause() : play(); }
+    if (e.code === 'ArrowRight' || e.code === 'ArrowLeft') { const t = clamp(now() + (e.code === 'ArrowRight' ? 5 : -5), 0, TOTAL); pausedAt = t; clock0 = performance.now() - t * 1000; au.currentTime = t; if (!playing) render(t); }
+  });
+} else document.getElementById('hint').remove();
+</script>
+</body>
+</html>
