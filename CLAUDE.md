@@ -250,6 +250,20 @@
     - 镜头和特效都是我在画面代码里做的；
     - 配音带情绪，男声做成电话音；没有配乐，只有音效。
     - 做法和踩过的坑见 `manju00/README.md`：参考图要平静脸；MiniMax 的图片、视频下载地址这里连不上，所以画面不能真的动。
+  - **他嫌 MiniMax 画得丑，要换个 AI 画画面**（11 月 2 日）。
+    - 这个环境只连得上 MiniMax 和 Google Gemini（没有密钥）；火山方舟、阿里云百炼、硅基流动、OpenAI 都被网络设置拦着。
+    - 我推荐**火山方舟的 Seedream**（即梦背后的模型）：
+      - 能传多张参考图，让人物每张都一样；
+      - 同一个平台还有 Seedance，可以把图变成会动的镜头。
+    - 请他做三件事：
+      - 开通方舟，创建 API Key；
+      - 在环境设置里放开 `ark.cn-beijing.volces.com`，把 Key 存成 `ARK_API_KEY`；
+      - 新开一个会话。
+    - 工具先写好了：`tools/ark/gen_images.py`，还没测过（没有密钥）。
+    - **新会话里有了 `ARK_API_KEY`，先把 `manju00/` 的 6 张图用 Seedream 重画一遍，跟 MiniMax 的放在一起给他比。**
+    - 备选：
+      - 阿里云百炼：`dashscope.aliyuncs.com` + `DASHSCOPE_API_KEY`；
+      - 他自己在即梦 app 里按我写的提示词出图发来。
 
 ## 频道头像
 - 11 月 2 日，频道主想给头像加我们的黑色猫耳毛线帽。他拿去 GPT 做。
