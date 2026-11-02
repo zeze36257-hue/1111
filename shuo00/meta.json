@@ -1,0 +1,11 @@
+{"no": "她说她想00", "title": "她说“我没事”", "fullTitle": "她说“我没事”",
+ "next": "",
+ "intro": false,
+ "outro": false,
+ "progress": false,
+ "voice": {"id": "Chinese (Mandarin)_Gentleman", "model": "speech-2.8-hd", "speed": 0.95},
+ "voices": {
+  "他": {"id": "Chinese (Mandarin)_Gentleman", "model": "speech-2.8-hd", "speed": 0.95, "say": {"……": "<#0.35#>"}},
+  "她": {"id": "Chinese (Mandarin)_Sweet_Lady", "model": "speech-2.8-hd", "speed": 0.95, "say": {"……": ""}}
+ },
+ "music": {"src": "bgm.wav", "segments": [[0, 400]], "fadeOut": 2.0}}

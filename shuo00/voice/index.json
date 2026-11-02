@@ -1,0 +1,86 @@
+{
+ "00.mp3": {
+  "key": "0aab3f544453",
+  "tkey": "8e32dfc18fe6",
+  "file": "00.mp3",
+  "start": 0.7,
+  "text": "你怎么了？",
+  "who": "他",
+  "kind": "say",
+  "speed": 0.95,
+  "dur": 0.79,
+  "room": 0.89
+ },
+ "01.mp3": {
+  "key": "fa5d5ea440c9",
+  "tkey": "d02c7cedb922",
+  "file": "01.mp3",
+  "start": 1.74,
+  "text": "我没事。",
+  "who": "她",
+  "kind": "say",
+  "speed": 0.95,
+  "dur": 0.56,
+  "room": 0.76
+ },
+ "02.mp3": {
+  "key": "222530ce6491",
+  "tkey": "6cf60b973574",
+  "file": "02.mp3",
+  "start": 2.65,
+  "text": "你自己想。",
+  "who": "她",
+  "kind": "think",
+  "speed": 0.95,
+  "dur": 0.74,
+  "room": 1.39
+ },
+ "03.mp3": {
+  "key": "38390647ac77",
+  "tkey": "dab22c07c8bc",
+  "file": "03.mp3",
+  "start": 4.19,
+  "text": "完了。是昨天没回消息，还是又忘了她说的那家店？",
+  "who": "他",
+  "kind": "think",
+  "speed": 0.95,
+  "dur": 5.18,
+  "room": 5.63
+ },
+ "04.mp3": {
+  "key": "16076c001fd1",
+  "tkey": "30bd76cc0eed",
+  "file": "04.mp3",
+  "start": 9.97,
+  "text": "要不……去吃你上次说的那家火锅？",
+  "who": "他",
+  "kind": "say",
+  "speed": 0.95,
+  "dur": 2.99,
+  "room": 3.14
+ },
+ "05.mp3": {
+  "key": "150b6c96c0b8",
+  "tkey": "7453968c11b6",
+  "file": "05.mp3",
+  "start": 13.26,
+  "text": "他记得！",
+  "who": "她",
+  "kind": "think",
+  "speed": 0.95,
+  "dur": 0.88,
+  "room": 0.98
+ },
+ "06.mp3": {
+  "key": "e0a8635b6c58",
+  "tkey": "9b6a404253cc",
+  "file": "06.mp3",
+  "start": 14.39,
+  "text": "……也行吧。",
+  "who": "她",
+  "kind": "say",
+  "speed": 0.95,
+  "dur": 0.59,
+  "room": 5.26
+ }
+}
