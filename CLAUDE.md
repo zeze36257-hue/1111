@@ -264,6 +264,14 @@
     - 备选：
       - 阿里云百炼：`dashscope.aliyuncs.com` + `DASHSCOPE_API_KEY`；
       - 他自己在即梦 app 里按我写的提示词出图发来。
+  - **他问能不能做“动的”**（像动画电影那样）（11 月 2 日）。
+    - 试了 MiniMax 的视频模型（海螺，`MiniMax-Hailuo-02`，图生视频）：
+      - 拿 `manju00/img/bride.jpg` 当第一帧，6 秒，512P，大约 1 分多钟就生成好了；
+      - 512P 只能图生视频，文生视频要更高清晰度。
+      - 测试那段的 file_id 是 `459016483770578`：用 `/v1/files/retrieve?file_id=` 拿新的下载地址。
+    - **但下载不下来**：视频放在 `public-cdn-video-data-algeng.oss-cn-wulanchabu.aliyuncs.com`，被网络设置拦了。
+      - 图片的下载地址 `hailuo-image-algeng-data.oss-cn-wulanchabu.aliyuncs.com` 也一样。
+    - 请他在环境设置的 Allowed domains 里加这两个地址；放开以后先把测试那段下载下来给他看。
 
 ## 频道头像
 - 11 月 2 日，频道主想给头像加我们的黑色猫耳毛线帽。他拿去 GPT 做。
