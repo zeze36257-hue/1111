@@ -184,6 +184,11 @@
     - `scenes.js` 的 `FILES` 里放了全部能用的图（除了 09），以后换图只改 `layout.py` 的 `SCRIPT`。
   - 剖析、还没定的事见 `refs/读文案/剖析.md`。
 
+## 频道头像
+- 11 月 2 日，频道主想给头像加我们的黑色猫耳毛线帽。他拿去 GPT 做。
+  - 头像是 `refs/头像/原图.jpg`：手绘线稿的女生，背景是黑色星空。
+  - 提示词在 `refs/头像/提示词.md`。
+
 ## 怎么出一期（详见各期 README.md）
 1. 新建目录 `talkNN/`，从上一期拷贝 `export.cjs`、`fetch_fonts.py`，写 `meta.json`。`"intro": false` 表示不加片头；`"progress": false` 表示不画进度条；`voice` 写配音设置。
 2. 在 `layout.py` 的 SCRIPT 里写文案。对白版每一句写成 [谁, say/think, 台词, 停顿]，见 `talk06/layout.py`。
