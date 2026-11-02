@@ -1,0 +1,7 @@
+{"no": "读文案04", "title": "把真话说出口，才是解药", "fullTitle": "把真话说出口，才是解药",
+ "next": "",
+ "intro": false,
+ "outro": false,
+ "progress": false,
+ "voice": {"id": "Chinese (Mandarin)_Gentleman", "model": "speech-2.8-hd", "speed": 0.95},
+ "music": {"src": "bgm.wav", "segments": [[0, 400]], "fadeOut": 2.0}}

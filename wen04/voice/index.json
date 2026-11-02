@@ -1,0 +1,98 @@
+{
+ "00.mp3": {
+  "key": "c014117febb5",
+  "tkey": "f073336be71a",
+  "file": "00.mp3",
+  "start": 0.7,
+  "text": "亲密关系里最怕的，就是心里有话憋着不说，",
+  "who": "黑",
+  "kind": "vo",
+  "speed": 0.95,
+  "dur": 3.35,
+  "room": 3.45
+ },
+ "01.mp3": {
+  "key": "dcc9be4a6e4b",
+  "tkey": "8a41903931ca",
+  "file": "01.mp3",
+  "start": 4.3,
+  "text": "却又盼着对方能读懂你。",
+  "who": "黑",
+  "kind": "vo",
+  "speed": 0.95,
+  "dur": 2.41,
+  "room": 3.06
+ },
+ "02.mp3": {
+  "key": "829b72a50cfc",
+  "tkey": "19fc8bf0e3e5",
+  "file": "02.mp3",
+  "start": 7.51,
+  "text": "可每个人想事情的方式都不一样，",
+  "who": "黑",
+  "kind": "vo",
+  "speed": 0.95,
+  "dur": 2.24,
+  "room": 2.39
+ },
+ "03.mp3": {
+  "key": "7c94856b53c3",
+  "tkey": "a7ed4f12b368",
+  "file": "03.mp3",
+  "start": 10.05,
+  "text": "让别人猜你的心思，跟赌博没什么两样。",
+  "who": "黑",
+  "kind": "vo",
+  "speed": 0.95,
+  "dur": 3.38,
+  "room": 4.03
+ },
+ "04.mp3": {
+  "key": "40abcbf6f787",
+  "tkey": "e1a65e929958",
+  "file": "04.mp3",
+  "start": 14.23,
+  "text": "与其把希望押在这么小的概率上，",
+  "who": "黑",
+  "kind": "vo",
+  "speed": 0.95,
+  "dur": 2.13,
+  "room": 2.28
+ },
+ "05.mp3": {
+  "key": "fd524f151ef8",
+  "tkey": "88fcd674685c",
+  "file": "05.mp3",
+  "start": 16.66,
+  "text": "不如坦坦荡荡，把心里真实的想法说出来。",
+  "who": "黑",
+  "kind": "vo",
+  "speed": 0.95,
+  "dur": 3.46,
+  "room": 4.21
+ },
+ "06.mp3": {
+  "key": "3c1f10194b94",
+  "tkey": "58a31aae0ebf",
+  "file": "06.mp3",
+  "start": 21.02,
+  "text": "有情绪，一点也不可怕；",
+  "who": "黑",
+  "kind": "vo",
+  "speed": 0.95,
+  "dur": 2.45,
+  "room": 2.65
+ },
+ "07.mp3": {
+  "key": "a839f1828ee5",
+  "tkey": "67de97dbb21a",
+  "file": "07.mp3",
+  "start": 23.82,
+  "text": "把真话说出口，才是解药。",
+  "who": "黑",
+  "kind": "vo",
+  "speed": 0.95,
+  "dur": 2.68,
+  "room": 5.13
+ }
+}
