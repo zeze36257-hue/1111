@@ -3,7 +3,7 @@
     python tools/cine/tts.py <episode-dir>
 
 Reads LINES and BIGLINES from <episode-dir>/scenes.js and "voice" from meta.json
-({"id": voice_id, "model": ..., "speed": ..., "pitch": ...}). Dialogue episodes (No.50 on) put their lines in DIALOG
+({"id": voice_id, "model": ..., "speed": ..., "pitch": ..., "emotion": ..., "language_boost": ...}). Dialogue episodes (No.50 on) put their lines in DIALOG
 instead, as [start, end, text, who, kind]; each speaker's voice is meta.json "voices"[who] ("voice" if missing). Each line becomes <episode-dir>/voice/NN.mp3, cached by
 text + settings (voice/index.json), so a re-render only calls the API for lines that changed. A line that comes out
 longer than the time it has (until the next line starts) starts up to 1 s early if the previous line left a gap, and
@@ -40,6 +40,7 @@ def synth(text, speed, v):
             'voice_setting': {'voice_id': v['id'], 'speed': round(speed, 3), 'vol': 1, 'pitch': v.get('pitch', 0)},
             'audio_setting': {'sample_rate': 44100, 'format': 'mp3', 'bitrate': 256000, 'channel': 1}}
     if v.get('emotion'): body['voice_setting']['emotion'] = v['emotion']
+    if v.get('language_boost'): body['language_boost'] = v['language_boost']   # 外语声音读中文写 "Chinese"
     hdr = {'Content-Type': 'application/json'}
     if os.environ.get('MINIMAX_API_KEY'): hdr['Authorization'] = 'Bearer ' + os.environ['MINIMAX_API_KEY']
     for attempt in range(8):
