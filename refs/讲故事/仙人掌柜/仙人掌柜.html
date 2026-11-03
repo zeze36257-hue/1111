@@ -1,0 +1,77 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+  body { margin: 0; background: #1b1b1f; font-family: "Noto Sans CJK SC", "WenQuanYi Zen Hei", sans-serif; }
+  .row { display: flex; gap: 30px; padding: 30px; }
+  .av { width: 1000px; height: 1000px; }
+  .o { stroke: #1b1b1b; stroke-width: 16; stroke-linejoin: round; stroke-linecap: round; }
+</style></head>
+<body>
+<div class="row" id="row"></div>
+<script>
+// 仙人掌柜：沙漠里开小酒馆的仙人掌。牛仔帽（帽带上别一朵粉色仙人掌花）、围裙、一只手招手、一只手搭着擦杯子的毛巾。
+// 头像会被裁成圆形，所以猫……不，仙人掌放在正中间的圆里。
+function cactus(o) {
+  const bg = o.bg, ring = o.ring || 'none', extra = o.extra || '';
+  return `
+<svg class="av" viewBox="0 0 1000 1000" xmlns="http://www.w3.org/2000/svg">
+  <defs><clipPath id="c${o.id}"><circle cx="500" cy="500" r="500"/></clipPath></defs>
+  <g clip-path="url(#c${o.id})">
+    ${o.clear ? '' : `<rect width="1000" height="1000" fill="${bg}"/>${extra}<path d="M60 930 q220 -90 440 -60 q240 30 440 -20 v150 h-880 z" fill="${o.sand}"/>`}
+  </g>
+  <g transform="${o.tf || ''}">
+  <!-- 左手：举起来招手 -->
+  <g class="o">
+    <path d="M378 610 h-70 q-50 0 -50 -50 v-150 q0 -34 34 -34 q34 0 34 34 v120 q0 12 12 12 h40" fill="#6cc05c"/>
+    <!-- 右手：搭着毛巾 -->
+    <path d="M622 650 h70 q50 0 50 -50 v-110 q0 -34 -34 -34 q-34 0 -34 34 v80 q0 12 -12 12 h-40" fill="#6cc05c"/>
+  </g>
+  <g stroke="#1b1b1b" stroke-width="10" stroke-linecap="round" opacity=".55"><path d="M214 386 l-22 -10"/><path d="M214 430 l-22 -14"/><path d="M228 346 l-14 -20"/></g>
+  <!-- 身体 -->
+  <rect class="o" x="360" y="330" width="280" height="560" rx="140" fill="#6cc05c"/>
+  <!-- 刺 -->
+  <g stroke="#2f7a2a" stroke-width="8" stroke-linecap="round">
+    <path d="M392 470 l-16 -6"/><path d="M392 540 l-16 -6"/><path d="M608 470 l16 -6"/><path d="M608 540 l16 -6"/>
+    <path d="M296 470 l-16 -4"/><path d="M296 520 l-16 -4"/><path d="M720 540 l16 -4"/>
+  </g>
+  <!-- 围裙 -->
+  <path class="o" d="M392 676 h216 v118 q0 60 -60 60 h-96 q-60 0 -60 -60 z" fill="#f4e4c1"/>
+  <path d="M392 676 q-20 -30 -10 -70 M608 676 q20 -30 10 -70" stroke="#1b1b1b" stroke-width="10" fill="none" stroke-linecap="round"/>
+  <rect x="456" y="728" width="88" height="62" rx="12" fill="none" stroke="#1b1b1b" stroke-width="9"/>
+  <!-- 毛巾 -->
+  <path class="o" d="M668 488 q48 -10 80 4 l-12 120 q-22 12 -44 0 z" fill="#fffaf0"/>
+  <g stroke="#9bc2d9" stroke-width="7"><path d="M676 520 q30 -8 64 2"/><path d="M674 548 q30 -8 64 2"/></g>
+  <!-- 脸 -->
+  <g fill="#1b1b1b"><ellipse cx="452" cy="470" rx="20" ry="28"/><ellipse cx="548" cy="470" rx="20" ry="28"/></g>
+  <g fill="#fff"><circle cx="459" cy="460" r="7"/><circle cx="555" cy="460" r="7"/></g>
+  <path d="M474 528 q26 22 52 0" stroke="#1b1b1b" stroke-width="12" fill="none" stroke-linecap="round"/>
+  <g fill="#f59b9b" opacity=".85"><ellipse cx="414" cy="516" rx="22" ry="12"/><ellipse cx="586" cy="516" rx="22" ry="12"/></g>
+  <!-- 牛仔帽，往右歪一点 -->
+  <g transform="rotate(-7 500 300)">
+    <path class="o" d="M282 318 q218 -54 436 0 q-6 34 -46 38 h-344 q-40 -4 -46 -38 z" fill="#8a5a2e"/>
+    <path class="o" d="M382 314 q4 -100 52 -116 q34 18 66 4 q32 14 66 -4 q48 16 52 116 z" fill="#8a5a2e"/>
+    <path d="M388 290 q112 22 224 0" stroke="#1b1b1b" stroke-width="26" fill="none" stroke-linecap="round"/>
+    <path d="M390 290 q110 20 220 0" stroke="#d6403a" stroke-width="14" fill="none" stroke-linecap="round"/>
+    <!-- 帽带上的仙人掌花 -->
+    <g transform="translate(584 284)">
+      <g fill="#ff8fb1" stroke="#1b1b1b" stroke-width="7">
+        <ellipse cx="0" cy="-22" rx="13" ry="20"/><ellipse cx="21" cy="-7" rx="13" ry="20" transform="rotate(72 21 -7)"/>
+        <ellipse cx="13" cy="18" rx="13" ry="20" transform="rotate(144 13 18)"/><ellipse cx="-13" cy="18" rx="13" ry="20" transform="rotate(216 -13 18)"/>
+        <ellipse cx="-21" cy="-7" rx="13" ry="20" transform="rotate(288 -21 -7)"/>
+      </g>
+      <circle r="11" fill="#ffd447" stroke="#1b1b1b" stroke-width="7"/>
+    </g>
+  </g>
+  </g>
+</svg>`;
+}
+const Z = 'translate(500 560) scale(1.25) translate(-500 -560)';
+const V = [
+  { id: 'A', bg: '#ffcf4a', sand: '#f2b13a', tf: Z },                                                   // 亮黄底，最显眼
+  { id: 'B', bg: '#ff9f6b', sand: '#f07f4a', tf: Z, extra: '<circle cx="770" cy="250" r="110" fill="#ffd8a8"/>' },     // 夕阳橙
+  { id: 'C', bg: '#8fd3f4', sand: '#f2cf8a', tf: Z, extra: '<circle cx="790" cy="210" r="80" fill="#fff3b0"/><path d="M120 200 q30 -26 60 0 q30 -26 60 0" stroke="#fff" stroke-width="14" fill="none" stroke-linecap="round"/>' },   // 蓝天
+  { id: 'T', clear: true },                                                                          // 透明底的全身形象
+];
+document.getElementById('row').innerHTML = V.map(cactus).join('');
+</script>
+</body></html>
