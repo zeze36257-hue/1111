@@ -5,9 +5,6 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>我们的恋爱手账</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=ZCOOL+XiaoWei&family=Noto+Sans+SC:wght@400;500;700&family=Fraunces:ital,opsz,wght@0,9..144,500;1,9..144,400;1,9..144,600&display=swap">
 <style>
 /* Layout: one narrow column like a pocket notebook — counter card on top, tabs, then a dated timeline; floating "+" for new entries. */
 :root{
@@ -21,7 +18,7 @@
   --sage:#5f8b72;        /* done / calm */
   --sage-soft:#e2efe7;
   --shadow:0 1px 2px rgba(42,33,48,.06),0 8px 24px rgba(42,33,48,.06);
-  --f-display:"ZCOOL XiaoWei","Songti SC","STSong",serif;
+  --f-display:"ZCOOL XiaoWei","Songti SC","STSong","Noto Serif CJK SC","Source Han Serif SC",serif;
   --f-body:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
   --f-num:"Fraunces",Georgia,"Times New Roman",serif;
   color-scheme:light;
@@ -160,6 +157,12 @@ textarea{min-height:110px;resize:vertical}
 .status b{color:var(--sage);font-weight:500}
 .status.warn b{color:var(--rose)}
 footer{display:flex;justify-content:center;gap:16px;flex-wrap:wrap}
+.lock{position:fixed;inset:0;z-index:70;background:var(--bg);overflow:auto;display:flex;align-items:center;justify-content:center;
+  padding:calc(24px + env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) calc(24px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.lock-card{width:100%;max-width:420px;background:var(--surface);border-radius:22px;box-shadow:var(--shadow);padding:26px 22px;display:flex;flex-direction:column;gap:14px}
+.lock-card h2{margin:0;font-family:var(--f-display);font-weight:400;font-size:26px}
+.lock-card p{margin:0}
+.lock-card .couple{font-size:28px}
 .link-btn{border:0;background:none;color:var(--muted);font-size:13px;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
 </style>
 </head>
@@ -194,6 +197,7 @@ footer{display:flex;justify-content:center;gap:16px;flex-wrap:wrap}
   <footer>
     <button class="link-btn" id="btnExport">导出备份</button>
     <button class="link-btn" id="btnImport">从备份恢复</button>
+    <button class="link-btn" id="btnLogout" hidden>换暗号 / 退出</button>
     <input type="file" id="importFile" accept="application/json,.json" hidden>
   </footer>
 </div>
@@ -202,37 +206,59 @@ footer{display:flex;justify-content:center;gap:16px;flex-wrap:wrap}
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
 </button>
 <div id="sheetRoot"></div>
+<div id="lockRoot" hidden></div>
 <div class="toast" id="toast" hidden></div>
 
 <script>
 (function(){
 "use strict";
 
+/* ================= 同步设置 =================
+   填上你自己 Supabase 项目的地址和公开密钥（publishable / anon key），两个人就能用暗号一起写。
+   留空的话，记录只存在当前这台设备上。 */
+const CONFIG={
+  supabaseUrl:"",
+  supabaseKey:""
+};
+
+/* fonts load in the background; if Google Fonts can't be reached, system fonts are used */
+try{const l=document.createElement("link");l.rel="stylesheet";l.href="https://fonts.googleapis.com/css2?family=ZCOOL+XiaoWei&family=Noto+Sans+SC:wght@400;500;700&family=Fraunces:ital,opsz,wght@0,9..144,500;1,9..144,400;1,9..144,600&display=swap";document.head.appendChild(l)}catch(_){}
+
 /* ================= storage =================
-   Cloud mode: the artifact's shared db (both of you see the same records).
-   Local mode: IndexedDB in this browser (when the file is opened on its own). */
+   Cloud mode: the Claude artifact's shared db.
+   Sync mode:  your own Supabase project + a shared passphrase (CONFIG above).
+   Local mode: IndexedDB in this browser only. */
 const COLS=["memories","dates","wishes"];
 const store={mode:"loading",subs:{},data:{memories:{},dates:{},wishes:{},meta:{}}};
 
 function emit(col){(store.subs[col]||[]).forEach(fn=>fn(store.data[col]))}
 function on(col,fn){(store.subs[col]=store.subs[col]||[]).push(fn);fn(store.data[col])}
 
-/* --- local (IndexedDB) --- */
+/* --- IndexedDB helpers (local mode + sync cache) --- */
 const IDB_NAME="love-notebook",IDB_STORE="kv";
-function idb(){return new Promise((res,rej)=>{try{const r=indexedDB.open(IDB_NAME,1);r.onupgradeneeded=()=>r.result.createObjectStore(IDB_STORE);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}catch(e){rej(e)}})}
-async function idbGet(){const d=await idb();return new Promise((res,rej)=>{const t=d.transaction(IDB_STORE).objectStore(IDB_STORE).get("all");t.onsuccess=()=>res(t.result);t.onerror=()=>rej(t.error)})}
+let idbConn=null;
+function idb(){if(idbConn)return idbConn;idbConn=new Promise((res,rej)=>{try{const r=indexedDB.open(IDB_NAME,1);r.onupgradeneeded=()=>r.result.createObjectStore(IDB_STORE);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}catch(e){rej(e)}});idbConn.catch(()=>{idbConn=null});return idbConn}
+async function idbGet(key){const d=await idb();return new Promise((res,rej)=>{const t=d.transaction(IDB_STORE).objectStore(IDB_STORE).get(key);t.onsuccess=()=>res(t.result);t.onerror=()=>rej(t.error)})}
+async function idbPut(key,val){const d=await idb();return new Promise((res,rej)=>{const tx=d.transaction(IDB_STORE,"readwrite");tx.objectStore(IDB_STORE).put(val,key);tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error)})}
+async function idbDel(key){const d=await idb();return new Promise(res=>{const tx=d.transaction(IDB_STORE,"readwrite");tx.objectStore(IDB_STORE).delete(key);tx.oncomplete=()=>res();tx.onerror=()=>res()})}
 let saveTimer=null;
-function idbSaveSoon(){clearTimeout(saveTimer);saveTimer=setTimeout(async()=>{try{const d=await idb();d.transaction(IDB_STORE,"readwrite").objectStore(IDB_STORE).put(store.data,"all")}catch(e){setStatus("这个浏览器不让保存数据，请导出备份",true)}},150)}
+function saveSoon(){clearTimeout(saveTimer);saveTimer=setTimeout(async()=>{
+  try{
+    if(store.mode==="sync")await idbPut("book:"+SYNC.book,{data:store.data,rev:SYNC.rev,revs:SYNC.revs,pending:SYNC.pending});
+    else if(store.mode==="local")await idbPut("all",store.data);
+  }catch(e){if(store.mode==="local")setStatus("这个浏览器不让保存数据，请导出备份",true)}
+},150)}
 
+/* --- local mode --- */
 async function startLocal(){
   store.mode="local";
-  try{const saved=await idbGet();if(saved){for(const k of [...COLS,"meta"])store.data[k]=saved[k]||{}}}
+  try{const saved=await idbGet("all");if(saved){for(const k of [...COLS,"meta"])store.data[k]=saved[k]||{}}}
   catch(e){setStatus("这个浏览器不让保存数据（可能是无痕模式），记得导出备份",true);store.mode="memory"}
   [...COLS,"meta"].forEach(emit);
   if(store.mode==="local")setStatus("<b>●</b> 已保存在这台设备的浏览器里");
 }
 
-/* --- cloud (artifact db) --- */
+/* --- cloud mode (Claude artifact db) --- */
 let db=null,canWrite=true;
 async function startCloud(dbNs){
   db=dbNs;store.mode="cloud";
@@ -248,19 +274,111 @@ async function startCloud(dbNs){
   db.doc("meta/couple").onSnapshot(s=>{store.data.meta=s.exists?s.data():{};emit("meta")},()=>{});
 }
 
+/* --- sync mode (your own Supabase + a shared passphrase) ---
+   Everything is encrypted on the phone with a key derived from the passphrase;
+   the server only ever sees ciphertext and a book id derived separately. */
+const SYNC={book:null,key:null,rev:0,revs:{},pending:{},busy:null,again:false};
+const te=new TextEncoder(),td=new TextDecoder();
+function b64(buf){const u=buf instanceof Uint8Array?buf:new Uint8Array(buf);let s="";for(let i=0;i<u.length;i+=0x8000)s+=String.fromCharCode.apply(null,u.subarray(i,i+0x8000));return btoa(s)}
+function unb64(s){const bin=atob(s),u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return u}
+function hex(buf){return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,"0")).join("")}
+async function derivePass(pass){
+  const base=await crypto.subtle.importKey("raw",te.encode(pass),"PBKDF2",false,["deriveBits"]);
+  const kdf=salt=>crypto.subtle.deriveBits({name:"PBKDF2",hash:"SHA-256",salt:te.encode(salt),iterations:210000},base,256);
+  const [idBits,keyBits]=await Promise.all([kdf("love-notebook/book-id/v1"),kdf("love-notebook/enc-key/v1")]);
+  return {book:hex(idBits),raw:b64(keyBits)};
+}
+async function importKey(raw){return crypto.subtle.importKey("raw",unb64(raw),{name:"AES-GCM"},false,["encrypt","decrypt"])}
+async function seal(obj){const iv=crypto.getRandomValues(new Uint8Array(12));const ct=new Uint8Array(await crypto.subtle.encrypt({name:"AES-GCM",iv},SYNC.key,te.encode(JSON.stringify(obj))));const out=new Uint8Array(12+ct.length);out.set(iv);out.set(ct,12);return b64(out)}
+async function open_(s){const u=unb64(s);return JSON.parse(td.decode(await crypto.subtle.decrypt({name:"AES-GCM",iv:u.subarray(0,12)},SYNC.key,u.subarray(12))))}
+async function rpc(fn,args){
+  const h={"apikey":CONFIG.supabaseKey,"Content-Type":"application/json"};
+  if(CONFIG.supabaseKey.startsWith("eyJ"))h.Authorization="Bearer "+CONFIG.supabaseKey; /* legacy anon JWT key */
+  const r=await fetch(CONFIG.supabaseUrl.replace(/\/+$/,"")+"/rest/v1/rpc/"+fn,{method:"POST",headers:h,body:JSON.stringify(args)});
+  if(!r.ok)throw Object.assign(new Error(fn+" "+r.status),{status:r.status});
+  return r.json();
+}
+function readSaved(){try{const s=JSON.parse(localStorage.getItem("love-sync")||"null");return s&&s.book&&s.raw?s:null}catch(_){return null}}
+
+async function startSyncFlow(){
+  store.mode="sync";
+  $("#btnLogout").hidden=false;
+  if(!(window.crypto&&crypto.subtle)){setStatus("请用 https 链接打开这个页面",true);return}
+  const saved=readSaved();
+  if(saved)return startSync(saved);
+  showLock();
+}
+async function startSync(cred){
+  SYNC.book=cred.book;SYNC.key=await importKey(cred.raw);
+  try{const c=await idbGet("book:"+SYNC.book);if(c){for(const k of [...COLS,"meta"])store.data[k]=(c.data&&c.data[k])||{};SYNC.rev=c.rev||0;SYNC.revs=c.revs||{};SYNC.pending=c.pending||{}}}catch(_){}
+  [...COLS,"meta"].forEach(emit);
+  setStatus("正在同步…");
+  syncNow(true);
+  setInterval(()=>{if(!document.hidden)syncNow(false)},20000);
+  document.addEventListener("visibilitychange",()=>{if(!document.hidden)syncNow(true)});
+  window.addEventListener("online",()=>syncNow(false));
+}
+function syncNow(reconcile){
+  if(SYNC.busy){SYNC.again=SYNC.again||reconcile||"pull";return SYNC.busy}
+  SYNC.busy=doSync(reconcile).finally(()=>{SYNC.busy=null;if(SYNC.again){const r=SYNC.again===true;SYNC.again=false;syncNow(r)}});
+  return SYNC.busy;
+}
+async function doSync(reconcile){
+  const changed=new Set();
+  try{
+    /* 1. send what this phone changed */
+    for(const [k,p] of Object.entries(SYNC.pending)){
+      const rev=p.deleted?await rpc("love_del",{p_book:SYNC.book,p_col:p.col,p_id:p.id})
+                       :await rpc("love_put",{p_book:SYNC.book,p_col:p.col,p_id:p.id,p_data:await seal(p.obj)});
+      if(SYNC.pending[k]===p){delete SYNC.pending[k];SYNC.revs[k]=Number(rev)}
+    }
+    /* 2. look for anything missed (cheap: ids and versions only) */
+    if(reconcile){
+      const idx=await rpc("love_index",{p_book:SYNC.book});let min=Infinity;
+      for(const r of idx){const k=r.col+"/"+r.id;if(SYNC.revs[k]!==Number(r.rev)&&Number(r.rev)<=SYNC.rev&&!SYNC.pending[k])min=Math.min(min,Number(r.rev))}
+      if(min!==Infinity)SYNC.rev=min-1;
+    }
+    /* 3. fetch what the other phone changed */
+    for(let guard=0;guard<1000;guard++){
+      const rows=await rpc("love_pull",{p_book:SYNC.book,p_since:SYNC.rev});
+      for(const r of rows){
+        const rev=Number(r.rev),k=r.col+"/"+r.id;SYNC.rev=Math.max(SYNC.rev,rev);
+        if(SYNC.pending[k]||SYNC.revs[k]===rev)continue;
+        const col=r.col==="meta"?"meta":r.col;if(col!=="meta"&&!COLS.includes(col))continue;
+        if(r.deleted){if(col==="meta")store.data.meta={};else{const m={...store.data[col]};delete m[r.id];store.data[col]=m}}
+        else{let obj;try{obj=await open_(r.data)}catch(_){continue}
+          if(col==="meta")store.data.meta=obj;else store.data[col]={...store.data[col],[r.id]:obj}}
+        SYNC.revs[k]=rev;changed.add(col);
+      }
+      if(rows.length<30)break;
+    }
+    const left=Object.keys(SYNC.pending).length;
+    setStatus(left?`还有 ${left} 条改动没传上去，稍后自动重试`:"<b>●</b> 已同步 · 你们俩看到的是同一本手账",!!left);
+  }catch(e){
+    setStatus(Object.keys(SYNC.pending).length?"现在连不上网络，改动先存在这台手机上，连上后会自动同步":"现在连不上网络，显示的是上次同步的内容",true);
+  }
+  changed.forEach(emit);saveSoon();
+}
+function queue(col,id,obj){
+  const k=col+"/"+id;SYNC.pending[k]=obj?{col,id,obj}:{col,id,deleted:true};
+  saveSoon();syncNow(false);
+}
+
+/* --- one write API for every mode --- */
 async function put(col,id,obj){
-  if(store.mode==="cloud"){
-    try{await db.collection(col).doc(id).set(obj)}
-    catch(e){handleWriteError(e);throw e}
-  }else{store.data[col]={...store.data[col],[id]:obj};emit(col);idbSaveSoon()}
+  if(store.mode==="cloud"){try{await db.collection(col).doc(id).set(obj)}catch(e){handleWriteError(e);throw e}return}
+  store.data[col]={...store.data[col],[id]:obj};emit(col);
+  if(store.mode==="sync")queue(col,id,obj);else saveSoon();
 }
 async function del(col,id){
-  if(store.mode==="cloud"){try{await db.collection(col).doc(id).delete()}catch(e){handleWriteError(e);throw e}}
-  else{const m={...store.data[col]};delete m[id];store.data[col]=m;emit(col);idbSaveSoon()}
+  if(store.mode==="cloud"){try{await db.collection(col).doc(id).delete()}catch(e){handleWriteError(e);throw e}return}
+  const m={...store.data[col]};delete m[id];store.data[col]=m;emit(col);
+  if(store.mode==="sync")queue(col,id,null);else saveSoon();
 }
 async function putMeta(obj){
-  if(store.mode==="cloud"){try{await db.doc("meta/couple").set(obj)}catch(e){handleWriteError(e);throw e}}
-  else{store.data.meta=obj;emit("meta");idbSaveSoon()}
+  if(store.mode==="cloud"){try{await db.doc("meta/couple").set(obj)}catch(e){handleWriteError(e);throw e}return}
+  store.data.meta=obj;emit("meta");
+  if(store.mode==="sync")queue("meta","couple",obj);else saveSoon();
 }
 function handleWriteError(e){
   const c=e&&e.code;
@@ -269,6 +387,44 @@ function handleWriteError(e){
   else toast("没保存成功，请稍后再试");
 }
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,8)}
+
+/* --- passphrase screen --- */
+function showLock(){
+  const root=$("#lockRoot");root.hidden=false;
+  root.innerHTML=`<div class="lock"><div class="lock-card">
+    <div class="couple" style="justify-content:flex-start"><span class="heart" aria-hidden="true">♥</span></div>
+    <h2>打开我们的手账</h2>
+    <p>输入你们俩约好的<b>暗号</b>。两个人输入同一句话，就会打开同一本手账，一起看、一起写。</p>
+    <div class="field"><label for="passIn">暗号</label><input type="text" id="passIn" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="比如：第一次见面在三号线"></div>
+    <p class="hint">至少 8 个字。用一句只有你们俩知道的话，每个字、标点都要一模一样。暗号丢了就打不开了，记在只有你们知道的地方。</p>
+    <p class="hint" id="lockMsg" role="status"></p>
+    <div class="actions" id="lockActions"><button class="btn primary" id="passGo" style="width:100%">打开手账</button></div>
+  </div></div>`;
+  const go=async()=>{
+    const pass=$("#passIn").value.trim().normalize("NFC");
+    if([...pass].length<8){$("#lockMsg").textContent="暗号至少要 8 个字";return}
+    $("#passGo").disabled=true;$("#lockMsg").textContent="正在打开，可能要等几秒…";
+    let cred;try{cred=await derivePass(pass)}catch(_){$("#lockMsg").textContent="这个浏览器不支持加密，换个浏览器试试";$("#passGo").disabled=false;return}
+    let count=null;try{count=(await rpc("love_index",{p_book:cred.book})).length}catch(_){}
+    const enter=()=>{try{localStorage.setItem("love-sync",JSON.stringify(cred))}catch(_){}root.hidden=true;root.innerHTML="";startSync(cred)};
+    if(count===null){$("#lockMsg").textContent="现在连不上服务器。确定暗号没打错的话，可以先进去，连上网后会自动同步。";askConfirm("先进去",enter);return}
+    if(count===0){$("#lockMsg").innerHTML="这个暗号下面<b>还是空的</b>。<br>如果你是第一次用，点「新建手账」；如果是来看对象写的内容，说明暗号有一个字不一样，再核对一下。";askConfirm("新建手账",enter);return}
+    enter();
+  };
+  function askConfirm(label,fn){
+    $("#lockActions").innerHTML=`<button class="btn ghost" id="passBack">重新输入</button><button class="btn primary" id="passOk">${label}</button>`;
+    $("#passOk").onclick=fn;
+    $("#passBack").onclick=()=>{$("#lockActions").innerHTML=`<button class="btn primary" id="passGo" style="width:100%">打开手账</button>`;$("#passGo").onclick=go;$("#lockMsg").textContent="";$("#passIn").focus()};
+  }
+  $("#passGo").onclick=go;
+  $("#passIn").addEventListener("keydown",e=>{if(e.key==="Enter"&&$("#passGo"))go()});
+  $("#passIn").focus();
+}
+async function logout(){
+  try{localStorage.removeItem("love-sync")}catch(_){}
+  if(SYNC.book)await idbDel("book:"+SYNC.book);
+  location.reload();
+}
 
 /* ================= dates ================= */
 const DAY=86400000;
@@ -343,10 +499,10 @@ function openSheet(html,bind){
 function escClose(e){if(e.key==="Escape")closeSheet()}
 function closeSheet(){$("#sheetRoot").innerHTML="";document.removeEventListener("keydown",escClose)}
 /* two-tap delete instead of confirm() */
-function armDelete(btn,action){
+function armDelete(btn,action,label){
   let armed=false,t;
   btn.addEventListener("click",async e=>{e.stopPropagation();
-    if(!armed){armed=true;const o=btn.textContent;btn.textContent="再点一次确认删除";t=setTimeout(()=>{armed=false;btn.textContent=o},3000);return}
+    if(!armed){armed=true;const o=btn.textContent;btn.textContent=typeof label==="function"?label():(label||"再点一次确认删除");t=setTimeout(()=>{armed=false;btn.textContent=o},3000);return}
     clearTimeout(t);try{await action()}catch(_){}
   });
 }
@@ -547,6 +703,7 @@ function bindUI(){
   $("#btnSettings").addEventListener("click",editSettings);
   $("#btnExport").addEventListener("click",exportBackup);
   $("#btnImport").addEventListener("click",()=>$("#importFile").click());
+  armDelete($("#btnLogout"),logout,()=>Object.keys(SYNC.pending).length?"还有改动没同步，再点一次也要退出":"再点一次退出（云端的记录不会丢）");
   $("#importFile").addEventListener("change",e=>{const f=e.target.files[0];if(f)importBackup(f);e.target.value=""});
   let saved="moments";try{saved=localStorage.getItem("love-tab")||"moments"}catch(_){}
   setTab(["moments","dates","wishes"].includes(saved)?saved:"moments");
@@ -559,7 +716,9 @@ bindUI();
 (async()=>{
   let dbNs=null;
   if(window.claude&&typeof window.claude.use==="function"){try{dbNs=await window.claude.use("db")}catch(_){dbNs=null}}
-  if(dbNs)startCloud(dbNs);else startLocal();
+  if(dbNs)startCloud(dbNs);
+  else if(CONFIG.supabaseUrl&&CONFIG.supabaseKey)startSyncFlow();
+  else startLocal();
 })();
 /* roll the counter over at midnight */
 setInterval(()=>{renderHero()},60000);
