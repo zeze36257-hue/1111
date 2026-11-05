@@ -1,6 +1,6 @@
 """合成一整条旁白：一句一句合成，句子之间按稿子里写的时间留白；再出一条带字幕的试听视频。
 
-    python3 tools/voice/narrate.py 稿子.txt 输出目录 [--voice ID] [--speed 1.0] [--rate 300] [--no-video]
+    python3 tools/voice/narrate.py 稿子.txt 输出目录 [--voice ID] [--speed 0.86] [--band 290,340] [--asr 目录] [--no-video]
 
 讲故事的规矩（频道主 11 月 5 日定的）：
 - 语速正常，像他发的参考视频那样，不刻意放慢；
@@ -11,16 +11,16 @@
 稿子.txt 的写法：
 - 一行一句（字幕也按这一行出）；
 - 行尾写 `|2.5`：这句说完停 2.5 秒。不写就用默认：句子之间停 0.8 秒；
-- 再往后可以写 `~260`：这句的目标语速（每分钟多少字，只算说话的时间），给要放慢的重话用；
 - 空行是分段：段落之间至少停 1.8 秒；
 - `#` 开头的行是注释或小标题，不读；
 - `# 读音：长津湖/(chang2)(jin1)(hu2) 入朝/(ru4)(chao2)`：多音字词典，合成时传给 MiniMax（pronunciation_dict），核对时也按它算拼音；
 - 读法跟写法不一样的，写成 `{字幕上显示的|配音读的}`，比如 `{1902|一九零二} 年`。
 
 两个检查：
-1. 语速（--rate 300）：每句合成完，量“只算说话时间”的语速（去掉首尾和句中 0.15 秒以上的停顿）。
-   离目标超过 5% 的，按比例改 speed 重新合成，最多 5 次，留最接近的；还差 3% 以上的，用 rubberband 拉到目标（最多 ±12%）。
-   8 个字以内的短句目标慢一成（--short-rate 可以另给）：第 1 集短句最赶，每分钟 330～350 字。
+1. 语速（--band 290,340）：每句合成完，量“只算说话时间”的语速（去掉首尾和句中 0.15 秒以上的停顿）。
+   在范围里的句子原样用，不改。太快、太慢的才改 speed 重新合成（只在 0.78～1.0 之间，先用以前合成过的），剩下的差距用 rubberband 补，最多 6%。
+   - 第 1 集（不管语速）每句 236～370 字/分钟，短句最赶。
+   - 第 2 集第一版定死目标 300、短句和重的话再放慢（speed 压到 0.55～0.7），频道主说“太慢了，很怪，没必要减速”。所以改成现在这样：只管两头。
 2. 读音（有 SenseVoice 模型就做：--asr 目录，或者环境变量 SENSEVOICE_DIR）：
    每句用语音识别听一遍，跟稿子都转成不带声调的拼音比，同音字不算错。
    对不上的，speed 微调重新合成，最多 3 次，留错得最少的；还对不上的写进报告，人再看。
@@ -44,14 +44,13 @@ VOICE = 'ttv-voice-2026110508401026-kAVaXtXg'
 SENT_GAP, PARA_GAP = 0.8, 1.8
 SR = 48000
 FONT_NAME = 'WenQuanYi Zen Hei'
-TOL = 0.05                                     # 语速离目标 5% 以内算合格
+SP_MIN, SP_MAX, STRETCH = 0.78, 1.0, 1.06       # 改 speed 只在这个范围里（再低声音会拖、很怪）；rubberband 最多补 6%
 
 ap = argparse.ArgumentParser()
 ap.add_argument('script'); ap.add_argument('out')
 ap.add_argument('--voice', default=VOICE); ap.add_argument('--speed', type=float, default=1.0)
 ap.add_argument('--model', default='speech-2.8-hd'); ap.add_argument('--no-video', action='store_true')
-ap.add_argument('--rate', type=float, default=0, help='目标语速：每分钟多少字，只算说话的时间（比如 300）；0 = 不自动调')
-ap.add_argument('--short-rate', type=float, default=0, help='8 个字以内短句的目标语速，默认比 --rate 慢一成')
+ap.add_argument('--band', default='', help='语速范围“最慢,最快”（每分钟多少字，只算说话的时间），比如 290,340；不写就不管语速')
 ap.add_argument('--asr', default=os.environ.get('SENSEVOICE_DIR', ''), help='SenseVoice 模型目录，有就逐句核对读音')
 ap.add_argument('--no-fix', action='store_true', help='只量、只核对，不重新合成（看看旧的录音）')
 a = ap.parse_args()
@@ -110,18 +109,28 @@ def synth(text, speed, tones):
     raise SystemExit(f'合成失败：{text!r}：{err}')
 
 
-def get(i, say, speed):
-    """这句话用这个 speed 合成的文件（没有就合成）。没有读音词典时，缓存的键跟以前一样，旧的录音还能用。"""
+def clip_key(say, speed):
+    """没有读音词典时，缓存的键跟以前一样，旧的录音还能用。"""
     tones = tones_for(say)
     setting = {'voice': a.voice, 'speed': speed, 'model': a.model}
-    key = hashlib.sha1(json.dumps([say, setting] + ([tones] if tones else []), ensure_ascii=False).encode()).hexdigest()[:12]
-    if not (idx.get(key) and os.path.exists(os.path.join(a.out, 'clips', idx[key]))):
-        name = f'{i:03d}_{key}.mp3'
-        open(os.path.join(a.out, 'clips', name), 'wb').write(synth(say, speed, tones))
-        idx[key] = name
-        json.dump(idx, open(idx_path, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
-        print(f'  合成 {i + 1}/{len(lines)} speed {speed}', say, flush=True)
-    return os.path.join(a.out, 'clips', idx[key])
+    return hashlib.sha1(json.dumps([say, setting] + ([tones] if tones else []), ensure_ascii=False).encode()).hexdigest()[:12]
+
+
+def cached(say, speed):
+    k = clip_key(say, speed)
+    return os.path.join(a.out, 'clips', idx[k]) if idx.get(k) and os.path.exists(os.path.join(a.out, 'clips', idx[k])) else None
+
+
+def get(i, say, speed):
+    """这句话用这个 speed 合成的文件（没有就合成）。"""
+    p = cached(say, speed)
+    if p: return p
+    key = clip_key(say, speed); name = f'{i:03d}_{key}.mp3'
+    open(os.path.join(a.out, 'clips', name), 'wb').write(synth(say, speed, tones_for(say)))
+    idx[key] = name
+    json.dump(idx, open(idx_path, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
+    print(f'  合成 {i + 1}/{len(lines)} speed {speed}', say, flush=True)
+    return os.path.join(a.out, 'clips', name)
 
 
 def load(path):                                # 解码、去掉首尾静音（留 40 ms）
@@ -149,12 +158,6 @@ def talk_time(x):
             run = 0
         else: run += 1
     return (len(seg) - gap) / 100
-
-
-def target(L):
-    if L['rate']: return L['rate']
-    if not a.rate: return None
-    return (a.short_rate or a.rate * 0.9) if nchar(L['say']) <= 8 else a.rate
 
 
 # ---------- 读音核对 ----------
@@ -203,12 +206,24 @@ def check(x, say):
     return int(d[n, m]), hyp, diff[::-1]
 
 
-# ---------- 每句：调语速、核对读音 ----------
-# 同一句、同一个 speed，每次合成出来的快慢也不一样（停顿多少、哪里拖长），speed 跟语速不成比例。
-# 所以：最多合成 5 次，每次照“最接近的那次”按比例改 speed；挑最接近的；还差 3% 以上的，最后用 rubberband 拉到目标（最多 ±12%）。
-def take(i, L, sp, tgt, n):
-    p = get(i, L['say'], sp); x = load(p); r = n / talk_time(x) * 60
-    return {'off': abs(r / tgt - 1) if tgt else 0, 'speed': sp, 'path': p, 'rate': r, 'x': x, 'err': None}
+# ---------- 每句：语速、读音 ----------
+# 第 2 集频道主说“别刻意放慢，慢了很怪”。所以：
+# - 不定死一个目标，只给一个范围（--band 290,340）。在范围里的句子用默认 speed 原样不动；
+# - 太快、太慢的才改 speed，而且只在 0.78～1.0 之间（再低声音会拖），先用以前合成过的（不花钱），没有合适的才合成；
+# - 剩下一点差距用 rubberband 补，最多 6%。
+LO, HI = (float(v) for v in a.band.split(',')) if a.band else (0.0, 0.0)
+
+
+def take(i, L, sp, n, synth=True):
+    p = get(i, L['say'], sp) if synth else cached(L['say'], sp)
+    if not p: return None
+    x = load(p); r = n / talk_time(x) * 60
+    return {'speed': sp, 'path': p, 'rate': r, 'x': x, 'err': None}
+
+
+def off(t):
+    """离语速范围多远，0 = 在范围里。"""
+    return max(0.0, LO / t['rate'] - 1, t['rate'] / HI - 1) if LO else 0.0
 
 
 def stretch(x, f):
@@ -219,42 +234,39 @@ def stretch(x, f):
 
 
 for i, L in enumerate(lines):
-    tgt, n, sp = target(L), nchar(L['say']), a.speed
-    tries = [take(i, L, sp, tgt, n)]
-    while tgt and not a.no_fix and len(tries) < 5 and min(t['off'] for t in tries) > TOL:
-        b = min(tries, key=lambda t: t['off'])
-        sp = round(min(1.2, max(0.55, b['speed'] * tgt / b['rate'])), 2)
-        while any(t['speed'] == sp for t in tries): sp = round(sp + (0.02 if b['rate'] < tgt else -0.02), 2)
-        tries.append(take(i, L, sp, tgt, n))
+    n = nchar(L['say'])
+    tries = [take(i, L, a.speed, n)]
+    if LO:                                     # 以前合成过的、speed 在范围里的也拿来比，不花钱
+        for sp in np.round(np.arange(SP_MIN, SP_MAX + 0.001, 0.01), 2):
+            t = take(i, L, float(sp), n, synth=False) if float(sp) != a.speed else None
+            if t: tries.append(t)
+    while LO and not a.no_fix and len(tries) < 12 and min(off(t) for t in tries) > 0:
+        b = min(tries, key=off)
+        goal = LO + 10 if b['rate'] < LO else HI - 10
+        sp = round(min(SP_MAX, max(SP_MIN, b['speed'] * goal / b['rate'])), 2)
+        if any(t['speed'] == sp for t in tries): break
+        tries.append(take(i, L, sp, n))
+    pref = lambda t: (round(off(t), 2), abs(t['speed'] - a.speed))     # 先看在不在范围里，再挑 speed 离默认最近的
+    tries.sort(key=pref)
     if rec:
-        tries.sort(key=lambda t: t['off'])
-        for t in tries:                        # 从最接近目标的开始核对，找到对得上的就停
+        for t in tries:                        # 按上面的顺序核对，找到对得上的就停
             t['err'], t['hyp'], t['diff'] = check(t['x'], L['say'])
             if not t['err']: break
         k = 0
         while not a.no_fix and k < 3 and all(t['err'] for t in tries if t['err'] is not None):
-            b = min(tries, key=lambda t: t['off'])
-            sp = round(b['speed'] * (0.97, 1.03, 0.94)[k], 2); k += 1
+            sp = round(min(SP_MAX, max(SP_MIN, tries[0]['speed'] * (0.97, 1.03, 0.94)[k])), 2); k += 1
             if any(t['speed'] == sp for t in tries): continue
-            t = take(i, L, sp, tgt, n); t['err'], t['hyp'], t['diff'] = check(t['x'], L['say']); tries.append(t)
-        best = min((t for t in tries if t['err'] is not None), key=lambda t: (t['err'], t['off']))
-        k = 0                                  # 对得上的那次太快或太慢：在语速最接近的那次旁边再试几次
-        while tgt and not a.no_fix and not best['err'] and best['off'] > 0.08 and k < 4:
-            near = min(tries, key=lambda t: t['off'])
-            sp = round(near['speed'] * (1.0, 0.98, 1.02, 0.96)[k], 2); k += 1
-            if any(t['speed'] == sp for t in tries): continue
-            t = take(i, L, sp, tgt, n); t['err'], t['hyp'], t['diff'] = check(t['x'], L['say']); tries.append(t)
-            best = min((t for t in tries if t['err'] is not None), key=lambda t: (t['err'], t['off']))
+            t = take(i, L, sp, n); t['err'], t['hyp'], t['diff'] = check(t['x'], L['say']); tries.append(t)
+        best = min((t for t in tries if t['err'] is not None), key=lambda t: (t['err'],) + pref(t))
     else:
-        best = min(tries, key=lambda t: t['off'])
-    best['raw_rate'] = best['rate']
-    if tgt and best['off'] > 0.03:             # 剩下的差距用 rubberband 补上
-        f = min(1.12, max(1 / 1.12, tgt / best['rate']))
+        best = tries[0]
+    if LO and off(best) > 0:                   # 剩下一点差距用 rubberband 补，最多 6%
+        f = min(STRETCH, max(1 / STRETCH, (LO if best['rate'] < LO else HI) / best['rate']))
         best['x'] = stretch(best['x'], f); best['rate'] *= f; best['stretch'] = f
-    L.update(best=best, target=tgt)
+    L.update(best=best)
     flag = '' if not best.get('err') else '  ← 对不上：' + '，'.join(best['diff'])
-    st = f"，拉了 {best['stretch']:.2f} 倍" if best.get('stretch') else ''
-    print(f"{i + 1:2d}. {n:2d}字 speed {best['speed']:.2f} 语速 {best['rate']:3.0f}" + (f"（目标 {tgt:.0f}{st}）" if tgt else '') + f"  {L['show']}{flag}", flush=True)
+    st = f" ×{best['stretch']:.2f}" if best.get('stretch') else ''
+    print(f"{i + 1:2d}. {n:2d}字 speed {best['speed']:.2f}{st} 语速 {best['rate']:3.0f}  {L['show']}{flag}", flush=True)
 
 # ---------- 拼起来 ----------
 LEAD = 1.0
@@ -283,11 +295,11 @@ rates = [L['best']['rate'] for L in lines]
 print(f'{len(lines)} 句，旁白 {total:.1f} 秒（说话 {talk:.1f} 秒，留白 {total - talk:.1f} 秒）；'
       f'语速 {min(rates):.0f}～{max(rates):.0f}，平均 {sum(nchar(L["say"]) for L in lines) / sum(nchar(L["say"]) / L["best"]["rate"] for L in lines):.0f} 字/分钟')
 
-rep = ['# 旁白检查', '', f'稿子：`{a.script}`；声音 `{a.voice}`；目标语速 {a.rate or "不调"}（只算说话的时间，字/分钟）。', '',
-       '| # | 字数 | speed | 语速 | 目标 | 识别 | 对不上的地方 | 句子 |', '|---|---|---|---|---|---|---|---|']
+rep = ['# 旁白检查', '', f'稿子：`{a.script}`；声音 `{a.voice}`；语速范围 {a.band or "不管"}（只算说话的时间，字/分钟）。', '',
+       '| # | 字数 | speed | 语速 | 识别 | 对不上的地方 | 句子 |', '|---|---|---|---|---|---|---|']
 for k, L in enumerate(lines, 1):
     b = L['best']
-    rep.append(f"| {k} | {nchar(L['say'])} | {b['speed']:.2f}{' ×%.2f' % b['stretch'] if b.get('stretch') else ''} | {b['rate']:.0f} | {L['target'] or ''} | "
+    rep.append(f"| {k} | {nchar(L['say'])} | {b['speed']:.2f}{' ×%.2f' % b['stretch'] if b.get('stretch') else ''} | {b['rate']:.0f} | "
                f"{b.get('hyp', '') if b.get('err') else ('✓' if rec else '')} | {'，'.join(b.get('diff') or [])} | {L['show']} |")
 open(os.path.join(a.out, '检查.md'), 'w', encoding='utf-8').write('\n'.join(rep) + '\n')
 bad = [k for k, L in enumerate(lines, 1) if L['best'].get('err')]

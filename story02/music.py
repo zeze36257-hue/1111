@@ -7,6 +7,7 @@
   → 风雪（弦乐颤音）→ 进攻（定音鼓、圆号）→ 埋伏、等待（几乎安静）→ 天亮（转到 F 大调）
   → 打退突围 → 枪声一下子停住，只剩风 → 战友上山，独奏小提琴的主题 → “他们是被冻死的”几乎没有音乐
   → 纸条：主题升起来，到“高傲地耸立在我的阵地上”最高 → 结尾：竖琴、弦乐，最后“致敬”停在 D 大调。
+- 时间都是按第一版旁白写的，用 timewarp.W 换到现在的旁白上（第二版旁白语速正常，短了 11 秒）。
 - 音效：tools/story/sfx.py 合成的风雪、呼吸、心跳、远处的炮声、照明弹、枪声、发动机、脚步、刨雪、布和纸的窸窣、电影院放映机。
 """
 import os, sys
@@ -17,13 +18,29 @@ import sfx
 from orch import Orch, SR
 from shots import END
 
+from timewarp import W
+
 N = int(END * SR)
-o = Orch(END)
+
+
+class _Orch(Orch):
+    """下面的时间都是按第一版旁白写的，放进去的时候换到现在的旁白上（见 timewarp.py）。"""
+    def note(self, inst, note, t, dur, **kw):
+        t0, t1 = W(t), W(t + dur); super().note(inst, note, t0, max(0.05, t1 - t0), **kw)
+
+    def hit(self, t, **kw): super().hit(W(t), **kw)
+
+    def bdrum(self, t, **kw): super().bdrum(W(t), **kw)
+
+    def roll(self, t, dur, **kw): super().roll(W(t), max(0.2, W(t + dur) - W(t)), **kw)
+
+
+o = _Orch(END)
 fx = np.zeros((N, 2), np.float32)
 
 
 def put(sig, t0, gain=1.0, pan=0.0):
-    a = int(t0 * SR)
+    a = int(W(t0) * SR)
     if a >= N: return
     if sig.ndim == 1:
         l, r = np.cos((pan + 1) * np.pi / 4) * np.sqrt(2), np.sin((pan + 1) * np.pi / 4) * np.sqrt(2)
@@ -179,8 +196,8 @@ for inst, notes, v in [('cb', ['D1'], 0.4), ('vc', ['D2', 'A2', 'D3'], 0.38), ('
     o.chord(inst, notes, 257.6, 6.0, vel=v, att=0.4, rel=3.0)
 music = o.render(reverb=0.36)
 music = music / (np.abs(music).max() + 1e-9) * 0.42
-music[int(127.8 * SR):int(128.0 * SR)] *= np.linspace(1, 0, int(0.2 * SR))[:, None]     # 枪声停的那一下，音乐也一下子停住
-music[int(128.0 * SR):int(131.0 * SR)] = 0
+c0, c1 = int(W(127.8) * SR), int(W(128.0) * SR)                                     # 枪声停的那一下，音乐也一下子停住
+music[c0:c1] *= np.linspace(1, 0, c1 - c0)[:, None]; music[c1:int(W(131.0) * SR)] = 0
 
 # ================= 音效 =================
 put(sfx.snow_wind(12.0), 0.0, 0.11)
@@ -209,7 +226,8 @@ put(sfx.snow_wind(6.2), 113.8, 0.13)
 put(sfx.engines(3.2, approach=True), 119.6, 0.15, pan=-0.2); put(sfx.heartbeat(72, 3.0), 119.8, 0.18)
 put(sfx.gunfire(5.0, shots=26, far=False), 122.8, 0.16)
 for tt, g in ((123.4, 0.28), (125.0, 0.24), (126.4, 0.3)): put(sfx.artillery(1.6, far=False), tt, g, pan=0.3 * np.cos(tt))
-fx[int(127.8 * SR):int(127.95 * SR)] *= np.linspace(1, 0, int(0.15 * SR))[:, None]; fx[int(127.95 * SR):int(128.6 * SR)] = 0
+c0, c1 = int(W(127.8) * SR), int(W(127.95) * SR)
+fx[c0:c1] *= np.linspace(1, 0, c1 - c0)[:, None]; fx[c1:int(W(128.6) * SR)] = 0
 put(sfx.wind(44.0), 128.6, 0.05)
 put(sfx.steps(5.8, 1.5, 'snow'), 135.6, 0.05)
 put(sfx.rustle(1.6, 26), 175.2, 0.06); put(sfx.rustle(1.2, 30), 179.6, 0.07)

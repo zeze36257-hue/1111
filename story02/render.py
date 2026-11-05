@@ -7,6 +7,7 @@
 字幕按标点切成短句，放在进度条上面；配乐在旁白说话时自动压低，整体响度 -16 LUFS。
 这一集新加的：
 - 开头 10 秒没有旁白：黑场 → 眨眼（眼皮睁开、闭上、再睁开，从糊到清楚）→ 照明弹和远处的炮火；旁白整体往后挪 NARR_OFF 秒。
+- 第二版旁白按正常语速重新挑了录音，镜头、字卡的时间用 timewarp.py 换算（见 shots.py 最后）。
 - 飘雪：静态图上加三层远近不同的雪花（+snow）。
 - 片名卡“冰雕连”、纸条上的两句话（宋体大字，跟着旁白一行一行出来）、片尾“致敬 冰雕连”。
 - 进度条上的仙人掌柜不蹦，只轻轻晃（calm）。
@@ -19,6 +20,7 @@ import scipy.io.wavfile as wf
 import scipy.signal as ss
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 from shots import SHOTS, END, NARR_OFF, QUOTE, NO_SUB
+from timewarp import W as warp                 # 第一版旁白的时间 -> 现在的旁白（见 timewarp.py）
 
 HERE = os.path.dirname(os.path.abspath(__file__)); os.chdir(HERE)
 sys.path.insert(0, os.path.join(HERE, '..', 'tools', 'story'))
@@ -27,7 +29,7 @@ from progress_bar import Bar
 W, H, FPS = 1920, 1080, 30
 XF, FADE_IN, FADE_OUT = 0.5, 0.5, 0.6
 OUT = '冰雕连_第2集.mp4'
-NARR = '/tmp/claude-0/-home-user-1111/1241d7d4-95e7-5361-a983-3f8317d8eee4/scratchpad/ep2/narr/旁白.wav'
+NARR = '/tmp/claude-0/-home-user-1111/1241d7d4-95e7-5361-a983-3f8317d8eee4/scratchpad/ep2/narr_v2/旁白.wav'   # 第二版（正常语速）
 if not os.path.exists(NARR): NARR = 'narration.m4a'
 BLACK = ('X', 'TITLE', 'ENDCARD')               # 这几种是黑底的：前后镜头淡出淡入到黑，不叠化
 
@@ -197,8 +199,8 @@ def title_card(t_in, dur):
 def end_card(t, a, b):
     f = snow.draw(np.zeros((H, W, 3), np.float32), t, 0.6)
     out = max(0.0, min(1.0, (b - 0.4 - t) / 1.6))
-    f = put(f, T_SALUTE, W / 2, H / 2 - 120, max(0, min(1, (t - 259.0) / 0.8)) * out)
-    return put(f, T_END, W / 2, H / 2 + 40, max(0, min(1, (t - 259.9) / 1.0)) * out)
+    f = put(f, T_SALUTE, W / 2, H / 2 - 120, max(0, min(1, (t - warp(259.0)) / 0.8)) * out)
+    return put(f, T_END, W / 2, H / 2 + 40, max(0, min(1, (t - warp(259.9)) / 1.0)) * out)
 
 
 _qbg = None
@@ -234,6 +236,8 @@ def shot_frame(i, t):
     if src == 'ENDCARD': return end_card(t, a, b)
     if src == 'QUOTE': return quote(t, a, b)
     if src.startswith('v_'):
+        fr, fps = clip(src)
+        rate = min(1.0, len(fr) / fps / (b - a))          # 镜头比动画长就放慢一点，刚好放完（不用 clip@ 里写的数）
         f = video(src, max(0.0, t - a), rate)
         if src == 'v_o2': f = flashes(f, t)
     elif base == 'blink':
