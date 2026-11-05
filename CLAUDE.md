@@ -306,6 +306,12 @@
         - 手机浏览器开火山方舟控制台：注册、实名、充值，开通模型，创建 API Key；
           - 要开通的（11 月 5 日跟他说的；开通本身一般不收钱，用了才扣）：Seedream 最新版（5.0 lite，有 Pro 也开）、Seedance 2.0 mini、Seedance 2.0 标准版。
           - 列表里找不到 mini 就先只开标准版。
+          - 他发来的开通列表（11 月 5 日截图）：
+            - 画图：Doubao-Seedream-5.0-pro / 5.0-lite / 5.0-flash / 4.5 / 4.0；
+            - 视频：Doubao-Seedance-2.5 / 2.0 / 2.0-fast / 2.0-mini / 1.0-pro / 1.0-pro-fast；
+            - 3D：Seed3D-2.0、Hyper3D-Gen2（用不上）。
+          - 我让他开：画图 5.0-lite（主力，送 50 张）、5.0-pro（重要镜头、对比用）、4.5（送 200 张，拿来免费试提示词）；视频 2.0-mini、2.0，再开 1.0-pro（送 200 万 token，免费试几段）。
+          - 调用时要用的模型 ID 以控制台显示的为准。
         - 在 Claude app 里编辑这个云环境：**Network secrets** 加 Bearer 密钥，网站 `ark.cn-beijing.volces.com`（代理自动带上，不用 `ARK_API_KEY`）；**Allowed domains** 加 `*.volces.com`（下载视频）；
         - 然后新开会话。`tools/ark/gen_images.py` 已经改成没有 `ARK_API_KEY` 也能用。
     - 他问火山方舟（Seedream 出图、Seedance 让图动）能做到什么效果（11 月 5 日）：我连不上，出不了样图。
