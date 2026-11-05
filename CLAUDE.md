@@ -303,7 +303,9 @@
     - **画面的做法定了**（11 月 5 日，他说“按你说的”）：2D 手绘风格 + 有限动画，大部分镜头是静态图加我做的运镜，只在有必要的地方用 Seedance 生成动画。
     - 等他：开通火山方舟、看第 1 集的稿子。旁白的声音 11 月 5 日定了（见下面“旁白的声音”）。
       - 他现在只有手机（11 月 5 日）。教他的做法：
-        - 手机浏览器开火山方舟控制台：注册、实名、充值，开通 Seedream 和 Seedance，创建 API Key；
+        - 手机浏览器开火山方舟控制台：注册、实名、充值，开通模型，创建 API Key；
+          - 要开通的（11 月 5 日跟他说的；开通本身一般不收钱，用了才扣）：Seedream 最新版（5.0 lite，有 Pro 也开）、Seedance 2.0 mini、Seedance 2.0 标准版。
+          - 列表里找不到 mini 就先只开标准版。
         - 在 Claude app 里编辑这个云环境：**Network secrets** 加 Bearer 密钥，网站 `ark.cn-beijing.volces.com`（代理自动带上，不用 `ARK_API_KEY`）；**Allowed domains** 加 `*.volces.com`（下载视频）；
         - 然后新开会话。`tools/ark/gen_images.py` 已经改成没有 `ARK_API_KEY` 也能用。
     - 他问火山方舟（Seedream 出图、Seedance 让图动）能做到什么效果（11 月 5 日）：我连不上，出不了样图。
