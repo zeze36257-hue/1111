@@ -10,7 +10,8 @@ jobs.json：[[名字, 提示词, 尺寸, 张数], ...]。尺寸写 "1080x1920" �
 - Allowed domains 里加 *.volces.com：生成的视频要从火山的存储地址下载。
 - 新开会话。也可以用环境变量 ARK_API_KEY（有就带上）。
 
-**还没测过**（11 月 2 日写的时候没有密钥）。第一次用时要核对：
+11 月 5 日测过：flash（doubao-seedream-5-0-flash-260915）能用，2K 一张 17 秒；5.0-pro 一张要两分钟，被代理的 30 秒限制卡住（502），先不用。见 refs/讲故事/方舟测试/README.md。
+以前写的注意事项：
 - 模型 ID：环境变量 ARK_IMAGE_MODEL，默认 doubao-seedream-4-0-250828，以方舟控制台“模型广场”里开通的为准；
   - 11 月查到的新版本：Seedream 5.0 lite（第三方文档写的是 seedream-5-0-260128）、5.0 Pro（seedream-5-0-pro-260628），方舟上的完整 ID 要看控制台；
 - response_format=b64_json 能不能用。
@@ -25,7 +26,7 @@ refs = []
 for p in sys.argv[3:]:
     buf = io.BytesIO(); Image.open(p).convert('RGB').save(buf, 'JPEG', quality=92)
     refs.append('data:image/jpeg;base64,' + base64.b64encode(buf.getvalue()).decode())
-KEY, MODEL = os.environ.get('ARK_API_KEY'), os.environ.get('ARK_IMAGE_MODEL', 'doubao-seedream-4-0-250828')
+KEY, MODEL = os.environ.get('ARK_API_KEY'), os.environ.get('ARK_IMAGE_MODEL', 'doubao-seedream-5-0-flash-260915')
 HDR = {'Content-Type': 'application/json'}
 if KEY: HDR['Authorization'] = 'Bearer ' + KEY     # 没有的话，靠环境设置里的 Network secrets 由代理带上
 
