@@ -216,13 +216,16 @@ def mix():
     sr = 48000
     nar = subprocess.run(['ffmpeg', '-v', 'error', '-i', NARR, '-ac', '1', '-ar', str(sr), '-f', 's16le', '-'], capture_output=True, check=True).stdout
     nar = np.frombuffer(nar, np.int16).astype(np.float32) / 32768
-    _, bgm = wf.read('bgm.wav'); bgm = bgm.astype(np.float32) / 32768
+    # 配乐先压缩一下：轻的段落抬起来，扑上来那种重的压一压（11 月 5 日第二版配乐起）
+    subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', 'bgm.wav', '-af', 'acompressor=threshold=-32dB:ratio=3:attack=20:release=400:makeup=6',
+                    '_bgm_c.wav'], check=True)
+    _, bgm = wf.read('_bgm_c.wav'); bgm = bgm.astype(np.float32) / 32768; os.remove('_bgm_c.wav')
     n = int(END * sr); nar = np.pad(nar, (0, max(0, n - len(nar))))[:n]; bgm = np.pad(bgm, ((0, max(0, n - len(bgm))), (0, 0)))[:n]
     hop = sr // 100
     e = np.sqrt(np.convolve(nar ** 2, np.ones(hop * 5) / (hop * 5), 'same'))
     talk = (e > 0.01).astype(np.float32)
     b, a = ss.butter(1, 2.0, 'low', fs=sr); duck = 1 - 0.55 * np.clip(ss.filtfilt(b, a, talk), 0, 1)
-    mixed = bgm * 1.6 * duck[:, None] + nar[:, None] * 0.9          # 配乐整体抬 4 dB，留白里氛围更足
+    mixed = bgm * 0.85 * duck[:, None] + nar[:, None] * 0.9         # 留白里配乐比说话低 5～10 dB
     wf.write('_mix.wav', sr, (np.clip(mixed, -1, 1) * 32767).astype(np.int16))
     s = subprocess.run(['ffmpeg', '-hide_banner', '-nostats', '-i', '_mix.wav', '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json', '-f', 'null', '-'],
                        capture_output=True, text=True).stderr
