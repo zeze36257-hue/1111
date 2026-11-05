@@ -312,6 +312,9 @@
             - 3D：Seed3D-2.0、Hyper3D-Gen2（用不上）。
           - 我让他开：画图 5.0-lite（主力，送 50 张）、5.0-pro（重要镜头、对比用）、4.5（送 200 张，拿来免费试提示词）；视频 2.0-mini、2.0，再开 1.0-pro（送 200 万 token，免费试几段）。
           - 调用时要用的模型 ID 以控制台显示的为准。
+          - **他实际开通了（11 月 5 日）**：Seedream-5.0-pro、Seedance-2.0、Seedance-2.0-mini。
+            - 5.0-lite、4.5、1.0-pro 的开通按钮是灰的，他说“现在不让开通”。
+            - 画图就用 5.0-pro（贵一点、慢一点）；5.0-flash 能开的话拿来打草稿。
         - 在 Claude app 里编辑这个云环境：**Network secrets** 加 Bearer 密钥，网站 `ark.cn-beijing.volces.com`（代理自动带上，不用 `ARK_API_KEY`）；**Allowed domains** 加 `*.volces.com`（下载视频）；
         - 然后新开会话。`tools/ark/gen_images.py` 已经改成没有 `ARK_API_KEY` 也能用。
     - 他问火山方舟（Seedream 出图、Seedance 让图动）能做到什么效果（11 月 5 日）：我连不上，出不了样图。
