@@ -1,7 +1,8 @@
 """讲故事用的环境声和音效，全部用 numpy 合成，没有版权问题。每个函数返回单声道（或立体声）的 numpy 数组，48 kHz。
 
 风、河水、篝火、雨、雷、雪夜的风、心跳、闷响（扑上来、砸下去）、熊吼、
-蟋蟀、狼嚎、鸟叫、脚步（草地、雪地）、马蹄、开门的吱呀声、人群低声议论、转场的呼啸声。
+蟋蟀、狼嚎、鸟叫、脚步（草地、雪地）、马蹄、开门的吱呀声、人群低声议论、转场的呼啸声；
+第 2 集加了：呼吸、炮声、照明弹、枪声、发动机、布和纸的窸窣、刨雪、电影院放映机。
 """
 import numpy as np
 import scipy.signal as ss
@@ -177,3 +178,94 @@ def rope_creaks(sec, every=1.4):
         y[a:a + len(c)] += c[:max(0, min(len(c), n - a))] * rng.uniform(0.4, 0.8)
         t += every * rng.uniform(0.8, 1.3)
     return norm(y)
+
+
+# ---------- 第 2 集（冰雕连）加的 ----------
+def breath(sec, rate=0.22):
+    """很慢的呼吸：吸一口、呼一口，冷天里带一点颤。rate 是每秒几次。"""
+    n = n_(sec); t = np.arange(n) / SR; y = np.zeros(n)
+    per = 1 / rate; k = 0.0
+    while k < sec:
+        for off, L, g, lo, hi in ((0.0, per * 0.38, 0.7, 500, 2600), (per * 0.45, per * 0.45, 1.0, 300, 1800)):   # 吸气、呼气
+            a, m = n_(k + off), n_(L)
+            if a + m >= n: break
+            e = np.sin(np.pi * np.arange(m) / m) ** 1.5 * (1 + 0.15 * np.sin(2 * np.pi * 9 * np.arange(m) / SR))
+            y[a:a + m] += band(L, lo, hi)[:m] * e * g
+        k += per
+    return norm(y)
+
+
+def artillery(sec=4.0, far=True):
+    """炮声：远处的是闷雷一样的一声，再拖一条长长的低音尾巴。"""
+    t = np.arange(n_(sec)) / SR
+    hit = band(sec, 25, 160 if far else 600) * np.exp(-t * (2.2 if far else 4.0))
+    body = np.sin(2 * np.pi * (48 - 14 * t) * t) * np.exp(-t * 3.5)
+    y = hit + body * 0.6
+    if not far: y += band(sec, 800, 5000) * np.exp(-t * 18) * 0.5
+    return norm(y)
+
+
+def flare(sec=3.0):
+    """照明弹：“嘭”的一声打上去，然后一直嘶嘶地烧。"""
+    n = n_(sec); t = np.arange(n) / SR
+    pop = band(sec, 200, 3000) * np.exp(-t * 30) * 0.8
+    hiss = band(sec, 2500, 9000) * (0.25 + 0.1 * wobble(sec, 7)) * np.clip((t - 0.25) / 0.4, 0, 1) * env(n, 0.01, 0.8)
+    return norm(pop + hiss)
+
+
+def gunfire(sec, shots=14, mg=True, far=True):
+    """枪声：零零星星的步枪声，夹着几串机枪的连发。远处的低通一点。"""
+    n = n_(sec); y = np.zeros(n)
+    def crack(g):
+        L = n_(0.35); tt = np.arange(L) / SR
+        return (band(0.35, 300, 4000)[:L] * np.exp(-tt * 40) + np.sin(2 * np.pi * 90 * tt) * np.exp(-tt * 25) * 0.6) * g
+    times = sorted(rng.uniform(0, sec - 0.4, shots))
+    for t0 in times:
+        c = crack(rng.uniform(0.4, 1.0)); a = n_(t0); y[a:a + len(c)] += c[:max(0, min(len(c), n - a))]
+    if mg:
+        for _ in range(max(1, int(sec / 2.5))):
+            t0 = rng.uniform(0, max(0.1, sec - 1.6))
+            for k in range(int(rng.integers(5, 10))):
+                c = crack(0.55); a = n_(t0 + k * 0.09)
+                if a + len(c) < n: y[a:a + len(c)] += c
+    if far:
+        b, a = ss.butter(2, 1800, 'low', fs=SR); y = ss.lfilter(b, a, y)
+    return norm(y)
+
+
+def engines(sec, approach=False):
+    """卡车、坦克的发动机声：低沉的轰鸣，approach=True 时越来越近。"""
+    n = n_(sec); t = np.arange(n) / SR
+    f = 38 + 4 * np.sin(2 * np.pi * 0.3 * t)
+    ph = 2 * np.pi * np.cumsum(f) / SR
+    y = (np.sin(ph) + 0.5 * np.sin(2 * ph) + 0.3 * np.sign(np.sin(3 * ph)) * 0.3) * (0.7 + 0.3 * wobble(sec, 2))
+    y += band(sec, 80, 700) * 0.6
+    g = np.linspace(0.25, 1.0, n) ** 1.5 if approach else np.ones(n)
+    return norm(y * g) * env(n, 1.0, 1.2)
+
+
+def rustle(sec=1.2, n_bits=24):
+    """布料、纸的窸窣声。"""
+    n = n_(sec); y = np.zeros(n)
+    for _ in range(n_bits):
+        L = n_(rng.uniform(0.02, 0.08)); a = int(rng.integers(0, max(1, n - L)))
+        y[a:a + L] += band(L / SR + 0.01, 1500, 7000)[:L] * np.hanning(L) * rng.uniform(0.3, 1.0)
+    return norm(y)
+
+
+def dig(sec, rate=1.6):
+    """手刨雪的沙沙声。"""
+    n = n_(sec); y = np.zeros(n); t = 0.1
+    while t < sec - 0.4:
+        L = n_(0.25); a = n_(t)
+        y[a:a + L] += band(0.25, 600, 6000)[:L] * np.sin(np.pi * np.arange(L) / L) ** 2 * rng.uniform(0.5, 1.0)
+        t += 1 / rate * rng.uniform(0.8, 1.2)
+    return norm(y)
+
+
+def projector(sec):
+    """电影院：放映机很轻的嗒嗒声加上一点空调底噪。"""
+    n = n_(sec); t = np.arange(n) / SR
+    tick = (np.sin(2 * np.pi * 24 * t) > 0.95).astype(float)
+    b, a = ss.butter(2, [1500, 4000], 'band', fs=SR)
+    return norm(ss.lfilter(b, a, tick) * 0.4 + band(sec, 60, 400) * 0.5) * env(n, 0.8, 0.8)

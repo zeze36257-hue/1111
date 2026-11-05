@@ -9,7 +9,8 @@
 
 画法：
 - 线在画面最下面，走过的部分是浅绿色，没走的是半透明白色，线下面先压暗一点，亮画面上也看得清；
-- 仙人掌高约画面的 8%，脚踩在线上，每秒蹦两下，蹦的时候左右歪一点。
+- 仙人掌高约画面的 8%，脚踩在线上，每秒蹦两下，蹦的时候左右歪一点；
+- 沉重的故事（第 2 集冰雕连）用 Bar(W, H, calm=True)：不蹦，只慢慢地轻轻晃。
 """
 import argparse, json, math, os, subprocess
 import numpy as np
@@ -22,8 +23,8 @@ REST = np.array([255, 255, 255], np.float32)
 
 
 class Bar:
-    def __init__(self, W, H, mascot=MASCOT):
-        self.W, self.H = W, H
+    def __init__(self, W, H, mascot=MASCOT, calm=False):
+        self.W, self.H, self.calm = W, H, calm      # calm：沉重的故事里不蹦，只是慢慢地轻轻晃（第 2 集冰雕连起）
         self.y = H - round(H * 0.022)             # 1080p 时离底边 24 px
         self.th = max(3, round(H * 0.0045))       # 1080p 时 5 px
         m = Image.open(mascot).convert('RGBA'); m = m.crop(m.getbbox())
@@ -47,8 +48,9 @@ class Bar:
         f[ya - 1:yb + 1] = (f[ya - 1:yb + 1].astype(np.float32) * 0.75).astype(np.uint8)
         f[ya:yb, :xp] = (f[ya:yb, :xp].astype(np.float32) * 0.1 + PLAYED * 0.9).astype(np.uint8)
         f[ya:yb, xp:] = (f[ya:yb, xp:].astype(np.float32) * 0.6 + REST * 0.4).astype(np.uint8)
-        hop = abs(math.sin(math.pi * 2 * t))
-        sp = self.sprites[int(round((math.sin(math.pi * 2 * t) * 0.5 + 0.5) * (len(self.angles) - 1)))]
+        s = math.sin(math.pi * 2 * t * (0.4 if self.calm else 1.0))
+        hop = abs(s) * (0.2 if self.calm else 1.0)
+        sp = self.sprites[int(round((s * (0.2 if self.calm else 0.5) + 0.5) * (len(self.angles) - 1)))]
         self._blend(f, sp, xp - sp.shape[1] // 2, self.y - sp.shape[0] + round(self.th * 0.5) - round(hop * self.H * 0.008))
         return f
 
