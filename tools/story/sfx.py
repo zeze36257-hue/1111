@@ -2,7 +2,8 @@
 
 风、河水、篝火、雨、雷、雪夜的风、心跳、闷响（扑上来、砸下去）、熊吼、
 蟋蟀、狼嚎、鸟叫、脚步（草地、雪地）、马蹄、开门的吱呀声、人群低声议论、转场的呼啸声；
-第 2 集加了：呼吸、炮声、照明弹、枪声、发动机、布和纸的窸窣、刨雪、电影院放映机。
+第 2 集加了：呼吸、炮声、照明弹、枪声、发动机、布和纸的窸窣、刨雪、电影院放映机；
+第 3 集加了：运输机、铁件撞击和修桥的敲打、电台沙沙声、海浪、轮船汽笛。
 """
 import numpy as np
 import scipy.signal as ss
@@ -269,3 +270,61 @@ def projector(sec):
     tick = (np.sin(2 * np.pi * 24 * t) > 0.95).astype(float)
     b, a = ss.butter(2, [1500, 4000], 'band', fs=SR)
     return norm(ss.lfilter(b, a, tick) * 0.4 + band(sec, 60, 400) * 0.5) * env(n, 0.8, 0.8)
+
+
+# ---------- 第 3 集（水门桥）加的 ----------
+def planes(sec, n=6, approach=True):
+    """几架螺旋桨运输机：低沉的嗡嗡声，桨叶一下一下地拍，先由远到近再远去（approach=True）。"""
+    t = np.arange(n_(sec)) / SR; y = np.zeros(len(t))
+    for k in range(n):
+        f0 = rng.uniform(58, 74); bp = rng.uniform(34, 42)
+        ph = 2 * np.pi * np.cumsum(f0 * (1 + 0.004 * np.sin(2 * np.pi * rng.uniform(0.1, 0.3) * t))) / SR
+        tone = np.sin(ph) + 0.5 * np.sin(2 * ph) + 0.25 * np.sin(3 * ph)
+        y += tone * (0.75 + 0.25 * np.sin(2 * np.pi * bp * t)) * rng.uniform(0.6, 1.0)
+    y += band(sec, 120, 900) * 0.5
+    g = np.sin(np.pi * np.clip(t / sec, 0, 1)) ** 1.2 if approach else np.ones(len(t))
+    return norm(y * g) * env(len(t), 1.5, 1.5)
+
+
+def clank(f=420.0, dec=6.0, sec=1.2):
+    """铁家伙撞在一起的一声“当”：几个不成倍数的泛音，很快衰减。"""
+    t = np.arange(n_(sec)) / SR
+    y = sum(np.sin(2 * np.pi * f * m * t) * np.exp(-t * dec * (1 + 0.6 * k)) * g
+            for k, (m, g) in enumerate(((1, 1.0), (2.63, 0.6), (4.12, 0.4), (6.3, 0.25))))
+    y += band(sec, 1500, 8000) * np.exp(-t * 60) * 0.6
+    return norm(y)
+
+
+def hammering(sec, rate=1.3):
+    """修桥：敲敲打打、铁件碰撞的声音，不太规则。"""
+    n = n_(sec); y = np.zeros(n); t = 0.2
+    while t < sec - 1.3:
+        c = clank(rng.uniform(300, 700), rng.uniform(5, 9)) * rng.uniform(0.4, 1.0); a = n_(t)
+        y[a:a + len(c)] += c[:max(0, min(len(c), n - a))]
+        t += 1 / rate * rng.uniform(0.6, 1.5)
+    return norm(y)
+
+
+def radio(sec):
+    """老式电台的沙沙声，时有时无的噼啪。"""
+    n = n_(sec); y = band(sec, 400, 3200) * (0.35 + 0.25 * wobble(sec, 3))
+    for _ in range(int(sec * 6)):
+        a = int(rng.integers(0, max(1, n - 800))); L = int(rng.integers(100, 700))
+        y[a:a + L] += rng.uniform(-1, 1, L) * rng.uniform(0.5, 1.0)
+    return norm(y) * env(n, 0.2, 0.3)
+
+
+def waves(sec):
+    """海浪：低沉的哗——哗——。"""
+    n = n_(sec); t = np.arange(n) / SR
+    swell = 0.4 + 0.6 * (0.5 + 0.5 * np.sin(2 * np.pi * t / 6.5 + rng.uniform(0, 6))) ** 2
+    b, a = ss.butter(2, 900, 'low', fs=SR)
+    return norm(ss.lfilter(b, a, rng.standard_normal(n)) * swell) * env(n, 1.5, 1.5)
+
+
+def ship_horn(sec=3.0, f=92.0):
+    """远处轮船的汽笛。"""
+    t = np.arange(n_(sec)) / SR
+    y = sum(np.sin(2 * np.pi * f * m * t) / m for m in range(1, 7)) * env(len(t), 0.3, 0.8)
+    b, a = ss.butter(2, 1200, 'low', fs=SR)
+    return norm(ss.lfilter(b, a, y))
