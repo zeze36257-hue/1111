@@ -10,7 +10,7 @@ from fontTools.ttLib import TTFont
 HERE = os.path.dirname(os.path.abspath(__file__))
 UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
 TEXT = open(os.path.join(HERE, '..', 'refs', '讲故事', '第2集_冰雕连_旁白.txt'), encoding='utf-8').read()
-TEXT += '冰雕连长津湖一九五零年冬朝鲜致敬第二集 ·—1950'
+TEXT += '冰雕连长津湖一九五零年冬朝鲜致敬第二集 ·—1950抗美援朝零下40度，125人一个都没有离开'
 chars = ''.join(sorted(set(TEXT) | set(map(chr, range(32, 127))) - set('\n\r\t')))
 FONTS = {'sub': ('Noto Sans SC', 'wght@700'), 'title': ('Noto Serif SC', 'wght@900'), 'quote': ('Noto Serif SC', 'wght@600')}
 # 纸条上的两句话本来想用手写体（Long Cang、马善政），可“耸”写出来像“算”，所以用清楚的宋体。
