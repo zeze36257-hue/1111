@@ -1,6 +1,7 @@
 """第 2 集“新开头”样片（给频道主看效果，不是新的一期）。
 
-    python3 sample_open.py      -> 样片_新开头_竖屏.mp4、样片_新开头_横屏.mp4（各 40 秒；做好的挪到 refs/讲故事/第2集_冰雕连/）
+    python3 sample_open.py          -> 样片_新开头_竖屏.mp4、样片_新开头_横屏.mp4（各 40 秒；做好的挪到 refs/讲故事/第2集_冰雕连/）
+    python3 sample_open.py --full   -> 冰雕连_第2集_竖屏.mp4（整集，竖屏；11 月 8 日他选了竖屏）
 
 为什么做：第 2 集后台数据平均只看了 8 秒，比开头 10 秒没旁白还短（前 2 秒还是黑屏）。11 月 8 日跟频道主说好，开头这样改：
 - 第一帧就有画面和字，不黑屏；旁白 0.3 秒开口，第一句就是最狠的那句；
@@ -13,7 +14,7 @@
 - 3.6 秒以后接原片 7.4 秒以后的部分（照明弹、远处的炮火 → “1950 年冬天……” → 片名卡 → 第一段第一句），整体提前 3.8 秒。
 - 声音：配乐和音效用 bgm.wav 同样提前 3.8 秒；旁白 = 新开头那句 + 原旁白提前 3.8 秒；混音跟 render.py 一样。
 """
-import json, os, subprocess
+import json, os, subprocess, sys
 import cv2
 import numpy as np
 import scipy.io.wavfile as wf
@@ -21,7 +22,9 @@ import scipy.signal as ss
 from PIL import Image, ImageDraw, ImageFont
 import render as R                                    # 原片的画面函数（frame、still、snow、字幕图）
 
-SHIFT, HOOK, END0 = 3.8, 3.6, 44.0                    # 原片时间 = 样片时间 + SHIFT；0～HOOK 是新开头；接到原片 44 秒为止
+FULL = '--full' in sys.argv
+SHIFT, HOOK = 3.8, 3.6                                # 原片时间 = 样片时间 + SHIFT；0～HOOK 是新开头
+END0 = R.END if FULL else 44.0                        # 样片接到原片 44 秒为止；--full 接到原片结束
 DUR = END0 - SHIFT
 FPS, SR = 30, 48000
 HOOK_LINE = 44                                        # 用原稿第 44 句当开头第一句
@@ -173,6 +176,13 @@ if __name__ == '__main__':
             Image.fromarray(horizontal(f.copy(), float(x))).save(f'frames/样片横_{float(x):05.2f}.jpg', quality=88)
         sys.exit()
     mix('_sample_audio.wav')
+    if FULL:
+        ev = encoder('冰雕连_第2集_竖屏.mp4', VW, VH, '_sample_audio.wav')
+        for k in range(int(DUR * FPS)):
+            t = k / FPS; ev.stdin.write(vertical(base(t), t).tobytes())
+            if k % 900 == 0: print(f'{t:.0f}s', flush=True)
+        ev.stdin.close(); ev.wait(); os.remove('_sample_audio.wav')
+        print('-> 冰雕连_第2集_竖屏.mp4'); sys.exit()
     ev, eh = encoder('样片_新开头_竖屏.mp4', VW, VH, '_sample_audio.wav'), encoder('样片_新开头_横屏.mp4', 1920, 1080, '_sample_audio.wav')
     for k in range(int(DUR * FPS)):
         t = k / FPS; f = base(t)
